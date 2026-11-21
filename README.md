@@ -1,1 +1,3 @@
-[cokesme.github.io/intense](cokesme.github.io/intense)
+[https://cokesme.github.io/intense](https://cokesme.github.io/intense)
+<https://cokesme.github.io/intense>
+https://cokesme.github.io/intense
