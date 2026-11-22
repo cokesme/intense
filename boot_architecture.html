@@ -1,0 +1,2121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Samsung Galaxy S22 (SM8450) — Interactive Boot, Memory &amp; Component Architecture</title>
+<style>
+  :root {
+    --bg: #faf5ec;
+    --bar: #efe7da;
+    --panel: rgba(252, 248, 241, 0.94);
+    --card: #f4ede1;
+    --btn: #e7dccb;
+    --btn-hover: #dacbb4;
+    --border: #cbbba4;
+    --text: #2d241c;
+    --muted: #6e5d4b;
+    --accent: #1f6f96;
+    --green: #2c7a4b;
+    --amber: #9e7319;
+    --purple: #b35920;
+    --rose: #b53d3d;
+    --terracotta: #b85d19;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    line-height: 1.35;
+  }
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* Compact 2-Row Light Desert Toolbar */
+  .topbar {
+    background: var(--bar);
+    border-bottom: 1px solid var(--border);
+    padding: 6px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    flex-shrink: 0;
+    z-index: 20;
+  }
+  .bar-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .bar-row.between {
+    justify-content: space-between;
+  }
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .brand h1 {
+    margin: 0;
+    font-size: 14.5px;
+    font-weight: 700;
+    color: #3e2715;
+  }
+  .brand .sub {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .btn-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .phase-btn, .nav-btn {
+    background: var(--btn);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 4px 8px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.14s ease;
+    white-space: nowrap;
+  }
+  .phase-btn:hover, .nav-btn:hover {
+    background: var(--btn-hover);
+    border-color: #9c7e59;
+  }
+  .phase-btn.active {
+    background: #b85d19;
+    border-color: #8f430b;
+    color: #fffaf0;
+    box-shadow: 0 1px 3px rgba(143, 67, 11, 0.25);
+  }
+  .phase-btn.branch.active {
+    background: #b53d3d;
+    border-color: #8a2626;
+    color: #fffaf0;
+    box-shadow: 0 1px 3px rgba(138, 38, 38, 0.25);
+  }
+  .nav-btn.toggled {
+    background: #d8c6aa;
+    border-color: #8f6b43;
+    color: #2d2013;
+  }
+  .ctrl-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--border);
+    margin: 0 2px;
+  }
+  .zoom-readout {
+    font-family: ui-monospace, monospace;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #7c4818;
+    min-width: 42px;
+    text-align: center;
+  }
+  .opacity-ctrl {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--muted);
+    background: var(--btn);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 3px 8px;
+    margin-left: auto;
+    font-weight: 600;
+  }
+  .opacity-ctrl input[type="range"] {
+    width: 78px;
+    accent-color: #b85d19;
+    cursor: pointer;
+    margin: 0;
+  }
+  .opacity-ctrl .val {
+    font-family: ui-monospace, monospace;
+    color: #8f430b;
+    min-width: 30px;
+    text-align: right;
+  }
+
+  /* Full-Screen Pan & Wheel-Zoom Stage */
+  .stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 1px 1px, rgba(140, 118, 92, 0.22) 1px, transparent 0) 0 0 / 28px 28px,
+      #faf5ec;
+    cursor: grab;
+    touch-action: none;
+  }
+  .stage.dragging {
+    cursor: grabbing;
+  }
+  svg#archSvg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    user-select: none;
+  }
+
+  /* Floating Dynamic Side Panel */
+  .side-panel {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    bottom: 10px;
+    width: 322px;
+    max-width: calc(100vw - 24px);
+    background: var(--panel);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    box-shadow: 0 8px 24px rgba(68, 52, 34, 0.14);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+    z-index: 15;
+  }
+  .side-panel.collapsed {
+    transform: translateX(calc(100% + 18px));
+    opacity: 0;
+    pointer-events: none;
+  }
+  .panel-head {
+    padding: 8px 11px;
+    border-bottom: 1px solid var(--border);
+    background: #ece3d4;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .panel-head .ph-badge {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #8f430b;
+  }
+  .panel-body {
+    padding: 10px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    flex: 1;
+    min-height: 0;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid #d7c9b4;
+    border-radius: 7px;
+    padding: 9px 10px;
+  }
+  .card-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .card h2 {
+    margin: 0;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #8f430b;
+  }
+  .card h3 {
+    margin: 0 0 4px 0;
+    font-size: 13px;
+    color: #2d241c;
+  }
+  .card p {
+    margin: 4px 0 6px 0;
+    font-size: 11.5px;
+    color: #4a3c2f;
+    line-height: 1.44;
+  }
+  .kv {
+    display: grid;
+    grid-template-columns: 78px 1fr;
+    gap: 4px 6px;
+    font-size: 11px;
+    margin-top: 6px;
+  }
+  .kv .k { color: var(--muted); font-weight: 600; }
+  .kv .v {
+    color: #2b2118;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    word-break: break-word;
+  }
+  .pill-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .pill {
+    font-size: 10.5px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #fffaf0;
+    border: 1px solid #cbbba4;
+    color: #7c4818;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .chip-btn {
+    font-size: 10.5px;
+    padding: 2px 7px;
+    border-radius: 5px;
+    background: #e7dccb;
+    border: 1px solid #c2b097;
+    color: #3e2c1d;
+    font-family: ui-monospace, monospace;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.12s ease;
+  }
+  .chip-btn:hover {
+    background: #dacbb4;
+    border-color: #8f6b43;
+  }
+  .chip-btn.selected {
+    background: #b85d19;
+    border-color: #8f430b;
+    color: #fffaf0;
+  }
+
+  /* Collapsed Panel Floating Re-open Tab */
+  .panel-reopen {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 14;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: #3e2715;
+    border-radius: 7px;
+    padding: 6px 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(68, 52, 34, 0.15);
+    display: none;
+  }
+  .panel-reopen.visible { display: inline-flex; align-items: center; gap: 6px; }
+
+  /* Floating Bottom-Left Compact Legend & Hint */
+  .legend-hud {
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    z-index: 12;
+    background: rgba(250, 245, 236, 0.92);
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 5px 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    color: #4a3c2f;
+    box-shadow: 0 2px 10px rgba(68, 52, 34, 0.08);
+    max-width: calc(100vw - 350px);
+    pointer-events: none;
+  }
+  .legend-hud span { display: inline-flex; align-items: center; gap: 5px; }
+  .dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+
+  /* Keyboard Shortcuts Modal */
+  .kbd-help {
+    position: absolute;
+    left: 12px;
+    bottom: 48px;
+    z-index: 25;
+    width: 340px;
+    max-width: calc(100vw - 24px);
+    background: var(--panel);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 10px 12px;
+    box-shadow: 0 10px 26px rgba(68, 52, 34, 0.22);
+    display: none;
+  }
+  .kbd-help.open { display: block; }
+  .kbd-help-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 7px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--border);
+  }
+  .kbd-help-head span {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #8f430b;
+  }
+  .kbd-grid {
+    display: grid;
+    grid-template-columns: 96px 1fr;
+    gap: 5px 10px;
+    font-size: 11.5px;
+    color: var(--text);
+  }
+  .kbd-key {
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: #7c4818;
+  }
+  kbd {
+    background: #fffaf0;
+    border: 1px solid #cbbba4;
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: ui-monospace, monospace;
+    font-size: 10.5px;
+    color: #3e2715;
+  }
+
+  /* SVG Dynamic States */
+  .zone { transition: opacity 0.22s ease; }
+  .dram-tick { transition: opacity 0.22s ease; }
+  .comp { cursor: pointer; transition: opacity 0.22s ease, filter 0.22s ease; }
+  .comp rect.box { transition: stroke 0.2s ease, stroke-width 0.2s ease; }
+  .comp:hover rect.box { filter: brightness(0.97); }
+  .comp.inactive { opacity: var(--ghost-opacity, 0); pointer-events: var(--ghost-events, none); }
+  .comp.active { opacity: 1; pointer-events: auto; }
+  .comp.active rect.box { stroke-width: 2.3; filter: drop-shadow(0 2px 5px rgba(80, 58, 34, 0.14)); }
+  .comp.selected rect.box { stroke: #b85d19 !important; stroke-width: 3.5 !important; filter: drop-shadow(0 0 9px rgba(184, 93, 25, 0.35)); }
+
+  .edge { fill: none; stroke-width: 2.4; transition: opacity 0.22s ease, stroke-width 0.22s ease; }
+  .edge.inactive { opacity: var(--ghost-edge-opacity, 0); pointer-events: none; }
+  .edge.active { opacity: 0.96; stroke-width: 3.1; stroke-dasharray: 10 5; animation: dashFlow 1.1s linear infinite; }
+  .edge-label {
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    transition: opacity 0.22s ease;
+    pointer-events: none;
+    paint-order: stroke;
+    stroke: #faf5ec;
+    stroke-width: 5px;
+    stroke-linejoin: round;
+  }
+  .edge-label.inactive { opacity: var(--ghost-edge-opacity, 0); }
+  .edge-label.active { opacity: 1; font-weight: 700; }
+
+  @keyframes dashFlow {
+    to { stroke-dashoffset: -30; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="bar-row between">
+      <div class="brand">
+        <h1>Samsung Galaxy S22 (SM-S901U1) — SM8450 Boot, Memory &amp; IPC Map</h1>
+        <span class="sub">S901U1UES8GYK3 · 2025-11-01</span>
+      </div>
+      <div class="btn-group">
+        <button class="nav-btn" id="viewModeBtn" title="Switch between Architecture Map and Approximate Physical SM8450 Die Floorplan (V)">▣ Die Floorplan</button>
+        <span class="ctrl-sep"></span>
+        <button class="nav-btn" id="prevBtn" title="Previous phase (←)">◀ Prev</button>
+        <button class="nav-btn" id="nextBtn" title="Next phase (→)">Next ▶</button>
+        <button class="nav-btn" id="playBtn" title="Toggle auto-play (Space)">▶ Auto-Play</button>
+        <span class="ctrl-sep"></span>
+        <button class="nav-btn" id="centerActiveBtn" title="Center camera on active phase components (C)">⌖ Center Active</button>
+        <button class="nav-btn" id="fitAllBtn" title="Fit full SoC diagram into view (F)">⊡ Fit All</button>
+        <button class="nav-btn" id="zoomOutBtn" title="Zoom out (−)">−</button>
+        <span class="zoom-readout" id="zoomVal">100%</span>
+        <button class="nav-btn" id="zoomInBtn" title="Zoom in (+)">+</button>
+        <button class="nav-btn" id="zoomResetBtn" title="Reset to 100% legible scale (R)">1:1</button>
+        <span class="ctrl-sep"></span>
+        <button class="nav-btn toggled" id="panelToggleBtn" title="Toggle floating inspector panel (D)">◧ Details</button>
+        <button class="nav-btn" id="helpBtn" title="Keyboard shortcuts (?)">⌨ ?</button>
+        <button class="nav-btn" id="exportBtn" title="Download current view as SVG">⬇ SVG</button>
+      </div>
+    </div>
+    <div class="bar-row" id="phaseBar">
+      <label class="opacity-ctrl" title="Bring hidden/inactive components, zones &amp; buses forward ([ / ] to step, O to toggle)">
+        <span>Inactive Opacity</span>
+        <input type="range" id="ghostRange" min="0" max="75" step="5" value="0" />
+        <span class="val" id="ghostVal">0%</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="stage" id="stage">
+    <svg id="archSvg" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr-cyan" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#1f6f96" />
+        </marker>
+        <marker id="arr-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#2c7a4b" />
+        </marker>
+        <marker id="arr-purple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#b35920" />
+        </marker>
+        <marker id="arr-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#9e7319" />
+        </marker>
+        <marker id="arr-rose" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#b53d3d" />
+        </marker>
+      </defs>
+
+      <g id="viewport">
+        <g id="archLayer">
+        <!-- DYNAMIC BACKGROUND ZONES (Fixed SoC columns, auto-fit height around visible nodes) -->
+        <g id="zone-silicon" class="zone">
+          <rect class="zone-box" x="12" y="16" width="314" height="994" rx="10" fill="#f1e9db" stroke="#c7b59b" stroke-width="1.4" />
+          <text class="zone-title" x="26" y="38" fill="#6e5a44" font-size="12.5" font-weight="700" letter-spacing="0.06em">SILICON ROOT &amp; STORAGE</text>
+        </g>
+
+        <g id="zone-sram" class="zone">
+          <rect class="zone-box" x="384" y="16" width="460" height="624" rx="10" fill="#f1e9db" stroke="#c7b59b" stroke-width="1.4" />
+          <text class="zone-title" x="398" y="38" fill="#6e5a44" font-size="12.5" font-weight="700" letter-spacing="0.06em">ON-CHIP SRAM / IMEM / TRUSTZONE</text>
+        </g>
+
+        <g id="zone-mcu" class="zone">
+          <rect class="zone-box" x="384" y="652" width="460" height="378" rx="10" fill="#f1e9db" stroke="#c7b59b" stroke-width="1.4" />
+          <text class="zone-title" x="398" y="674" fill="#6e5a44" font-size="12.5" font-weight="700" letter-spacing="0.06em">ALWAYS-ON &amp; REAL-TIME SoC MCUs</text>
+        </g>
+
+        <g id="zone-dram-sys" class="zone">
+          <rect class="zone-box" x="904" y="16" width="604" height="536" rx="10" fill="#f1e9db" stroke="#c7b59b" stroke-width="1.4" />
+          <text class="zone-title" x="918" y="38" fill="#6e5a44" font-size="12.5" font-weight="700" letter-spacing="0.06em">LPDDR5 DRAM — EL2 HYPERVISOR &amp; SUBSYSTEMS</text>
+        </g>
+
+        <g id="zone-dram-hlos" class="zone">
+          <rect class="zone-box" x="904" y="564" width="604" height="482" rx="10" fill="#f1e9db" stroke="#c7b59b" stroke-width="1.4" />
+          <text class="zone-title" x="918" y="586" fill="#6e5a44" font-size="12.5" font-weight="700" letter-spacing="0.06em">LPDDR5 DRAM — NS-EL1 BOOTLOADERS &amp; HLOS</text>
+        </g>
+
+        <!-- DRAM PHYSICAL ADDRESS TICKS (auto-hidden when node/zone hidden) -->
+        <g id="dram-ruler" font-family="ui-monospace, monospace" font-size="11.5" font-weight="700" fill="#7a6236">
+          <text class="dram-tick" data-node="hypvm" x="916" y="76">0x80000000</text>
+          <text class="dram-tick" data-node="uh_rkp" x="916" y="204">0x805A0000</text>
+          <text class="dram-tick" data-node="sec_ddr" x="916" y="318">0x80800000</text>
+          <text class="dram-tick" data-node="dsps" x="916" y="410">0x86300000</text>
+          <text class="dram-tick" data-node="abl" x="916" y="616">0x9FA00000</text>
+          <text class="dram-tick" data-node="uefi" x="916" y="746">0xA7000000</text>
+          <text class="dram-tick" data-node="ramdump" x="916" y="856">0xA7D00000</text>
+          <text class="dram-tick" data-node="hlos" x="916" y="942">0xE0600000+</text>
+        </g>
+
+        <!-- COLUMN 1: SILICON ROOT & STORAGE -->
+        <g class="comp" id="node-pbl" data-id="pbl">
+          <rect class="box" x="24" y="52" width="290" height="92" rx="7" fill="#e3f0f7" stroke="#1f6f96" />
+          <text x="38" y="78" fill="#173f57" font-size="16" font-weight="700">PBL (Mask ROM)</text>
+          <text x="38" y="100" fill="#165a7a" font-size="12.5" font-family="ui-monospace, monospace">Immutable Silicon BootROM</text>
+          <text x="38" y="122" fill="#3f5866" font-size="12">Loads &amp; auths xbl_s.melf / EDL</text>
+        </g>
+
+        <g class="comp" id="node-qfprom" data-id="qfprom">
+          <rect class="box" x="24" y="168" width="290" height="104" rx="7" fill="#f7ebe1" stroke="#b35920" />
+          <text x="38" y="194" fill="#4a250e" font-size="16" font-weight="700">QFPROM eFuses</text>
+          <text x="38" y="216" fill="#9c4614" font-size="12.5" font-family="ui-monospace, monospace">0x221C01B0..0x221C0560</text>
+          <text x="38" y="238" fill="#63422c" font-size="12">OEM_PK_HASH (SHA-384), OEM=0x20</text>
+          <text x="38" y="257" fill="#63422c" font-size="12">Knox Warranty Bit, KG, sec.elf</text>
+        </g>
+
+        <g class="comp" id="node-ufs_bl" data-id="ufs_bl">
+          <rect class="box" x="24" y="292" width="290" height="148" rx="7" fill="#efeae0" stroke="#7c6d56" />
+          <text x="38" y="318" fill="#2f261b" font-size="16" font-weight="700">UFS Flash: BL Partitions</text>
+          <text x="38" y="340" fill="#524432" font-size="12" font-family="ui-monospace, monospace">xbl_s.melf · xbl_config.elf</text>
+          <text x="38" y="360" fill="#524432" font-size="12" font-family="ui-monospace, monospace">uefi.elf · abl.elf · tz.mbn</text>
+          <text x="38" y="380" fill="#524432" font-size="12" font-family="ui-monospace, monospace">hypvm.mbn · devcfg.mbn · TAs</text>
+          <text x="38" y="400" fill="#524432" font-size="12" font-family="ui-monospace, monospace">vbmeta.img · imagefv.elf</text>
+          <text x="38" y="424" fill="#635543" font-size="11.5">MBN v7 + SignerVer02 + AVB0</text>
+        </g>
+
+        <g class="comp" id="node-rpmb" data-id="rpmb">
+          <rect class="box" x="24" y="460" width="290" height="108" rx="7" fill="#f7ebe1" stroke="#b35920" />
+          <text x="38" y="486" fill="#4a250e" font-size="16" font-weight="700">UFS RPMB &amp; SFS</text>
+          <text x="38" y="508" fill="#9c4614" font-size="12">Replay-Protected Secure Storage</text>
+          <text x="38" y="530" fill="#63422c" font-size="11.5" font-family="ui-monospace, monospace">engmode · vaultkeeper · bksecapp</text>
+          <text x="38" y="550" fill="#63422c" font-size="11.5" font-family="ui-monospace, monospace">tz_kg · tz_hdm · km41 · uefi_sec</text>
+        </g>
+
+        <g class="comp" id="node-ufs_fs" data-id="ufs_fs">
+          <rect class="box" x="24" y="588" width="290" height="112" rx="7" fill="#e3f2e7" stroke="#2c7a4b" />
+          <text x="38" y="614" fill="#164228" font-size="16" font-weight="700">UFS: NON-HLOS &amp; dspso</text>
+          <text x="38" y="636" fill="#22633c" font-size="12" font-family="ui-monospace, monospace">NON-HLOS.bin (116MB FAT16)</text>
+          <text x="38" y="656" fill="#22633c" font-size="12" font-family="ui-monospace, monospace">dspso.bin (64MiB ext4)</text>
+          <text x="38" y="680" fill="#3a5946" font-size="11.5">Subsystem FW, 38 TAs (prov), .so</text>
+        </g>
+
+        <g class="comp" id="node-ext_io" data-id="ext_io">
+          <rect class="box" x="24" y="720" width="290" height="122" rx="7" fill="#fbe7e7" stroke="#b53d3d" />
+          <text x="38" y="746" fill="#4f1616" font-size="16" font-weight="700">External I/O &amp; Display</text>
+          <text x="38" y="768" fill="#962929" font-size="12">USB: Odin / Sahara / EDL</text>
+          <text x="38" y="788" fill="#962929" font-size="12">Display Panel (Panel_*.xml)</text>
+          <text x="38" y="808" fill="#962929" font-size="12">JPEGs from imagefv.elf</text>
+          <text x="38" y="828" fill="#6b3535" font-size="11.5">SD Card / NVMe dump targets</text>
+        </g>
+
+        <g class="comp" id="node-spu" data-id="spu">
+          <rect class="box" x="24" y="862" width="290" height="122" rx="7" fill="#f7ebe1" stroke="#b35920" />
+          <text x="38" y="888" fill="#4a250e" font-size="16" font-weight="700">SPU260 (ARM SPU)</text>
+          <text x="38" y="910" fill="#9c4614" font-size="12.5" font-family="ui-monospace, monospace">spss1p.* @ 0x1000</text>
+          <text x="38" y="932" fill="#63422c" font-size="12">StrongBox / High Assurance</text>
+          <text x="38" y="952" fill="#63422c" font-size="11.5">SecNVM / hwvault via spcom</text>
+          <text x="38" y="970" fill="#63422c" font-size="11.5">QTI SPU MBNv7 root signed</text>
+        </g>
+
+        <!-- COLUMN 2A: ON-CHIP SRAM / IMEM / TRUSTZONE -->
+        <g class="comp" id="node-tme" data-id="tme">
+          <rect class="box" x="396" y="52" width="436" height="112" rx="7" fill="#e3f0f7" stroke="#1f6f96" />
+          <text x="412" y="78" fill="#173f57" font-size="16" font-weight="700">TME RISC-V + Sequencer (SRAM)</text>
+          <text x="412" y="101" fill="#165a7a" font-size="13" font-family="ui-monospace, monospace">SEQ_FW r79: 0x2211C000 (0x16KB)</text>
+          <text x="412" y="122" fill="#165a7a" font-size="13" font-family="ui-monospace, monospace">TME_FW:     0x20400000..0x2043B4DC</text>
+          <text x="412" y="146" fill="#3f5866" font-size="12">FreeRTOS RoT auth, anti-rollback, IPCC_OSTME</text>
+        </g>
+
+        <g class="comp" id="node-ocimem_xbl" data-id="ocimem_xbl">
+          <rect class="box" x="396" y="188" width="436" height="124" rx="7" fill="#e3f0f7" stroke="#1f6f96" />
+          <text x="412" y="214" fill="#173f57" font-size="16" font-weight="700">OCIMEM: XBL Loader &amp; Config</text>
+          <text x="412" y="237" fill="#165a7a" font-size="12.5" font-family="ui-monospace, monospace">XBL Loader: 0x14819000 (entry 0x14819FA8)</text>
+          <text x="412" y="257" fill="#165a7a" font-size="12.5" font-family="ui-monospace, monospace">xbl_config: 0x1494E000 | apdp: 0x149FD000</text>
+          <text x="412" y="280" fill="#3f5866" font-size="12">DLOAD Cookie: 0x01FD3000 | DCB DDR tables</text>
+          <text x="412" y="299" fill="#3f5866" font-size="11.5">pre_ddr-soc.dtb + platform.dtb</text>
+        </g>
+
+        <g class="comp" id="node-tz_el3" data-id="tz_el3">
+          <rect class="box" x="396" y="336" width="436" height="96" rx="7" fill="#f7ebe1" stroke="#b35920" />
+          <text x="412" y="362" fill="#4a250e" font-size="16" font-weight="700">IMEM: EL3 Monitor (tz.mbn)</text>
+          <text x="412" y="385" fill="#9c4614" font-size="12.5" font-family="ui-monospace, monospace">0x14680000..0x146939D8 (PSCI / WarmBoot)</text>
+          <text x="412" y="410" fill="#63422c" font-size="12">8-core power-gating, SMC dispatch, EL3 trap</text>
+        </g>
+
+        <g class="comp" id="node-tz_qtee" data-id="tz_qtee">
+          <rect class="box" x="396" y="456" width="436" height="164" rx="7" fill="#f7ebe1" stroke="#b35920" />
+          <text x="412" y="482" fill="#4a250e" font-size="16" font-weight="700">PIMEM / TZ RAM: S-EL1 QTEE &amp; TAs</text>
+          <text x="412" y="505" fill="#9c4614" font-size="12.5" font-family="ui-monospace, monospace">devcfg TZ: 0x1C000000 | QTEE: 0x1C00B000</text>
+          <text x="412" y="528" fill="#63422c" font-size="12">MINK IPC, SMMUv3, GPCE HW Crypto, RPMB/SFS</text>
+          <text x="412" y="551" fill="#63422c" font-size="12" font-family="ui-monospace, monospace">BL TAs: uefi_sec · km41 · storsec · bksecapp</text>
+          <text x="412" y="570" fill="#63422c" font-size="12" font-family="ui-monospace, monospace">        engmode · tz_hdm · tz_iccc · tz_kg · vk</text>
+          <text x="412" y="591" fill="#7c4818" font-size="11.5" font-family="ui-monospace, monospace">NON-HLOS TAs: hwvault · skm · proca · widevine</text>
+          <text x="412" y="609" fill="#962929" font-size="11.5" font-family="ui-monospace, monospace">              prov.* [ENCRYPTED 10e35b1e20130724]</text>
+        </g>
+
+        <!-- COLUMN 2B: ALWAYS-ON & REAL-TIME SoC MCUs -->
+        <g class="comp" id="node-aop" data-id="aop">
+          <rect class="box" x="396" y="684" width="436" height="96" rx="7" fill="#e3f2e7" stroke="#2c7a4b" />
+          <text x="412" y="710" fill="#164228" font-size="16" font-weight="700">AOP ARM Cortex-M/R (aop.mbn)</text>
+          <text x="412" y="733" fill="#22633c" font-size="12.5" font-family="ui-monospace, monospace">SRAM: 0x0B000000 | IMEM: 0x14699000</text>
+          <text x="412" y="757" fill="#3a5946" font-size="12">DDR: 0x80800000..0x80882000 (aop_devcfg)</text>
+        </g>
+
+        <g class="comp" id="node-cpucp" data-id="cpucp">
+          <rect class="box" x="396" y="796" width="212" height="112" rx="7" fill="#e3f2e7" stroke="#2c7a4b" />
+          <text x="410" y="822" fill="#164228" font-size="15" font-weight="700">CPUCP (RISC-V)</text>
+          <text x="410" y="843" fill="#22633c" font-size="12" font-family="ui-monospace, monospace">0x17D00000 (TCM)</text>
+          <text x="410" y="862" fill="#22633c" font-size="12" font-family="ui-monospace, monospace">0x80B00000 (DDR)</text>
+          <text x="410" y="883" fill="#3a5946" font-size="11.5">DVFS, CPRh, ACD</text>
+          <text x="410" y="899" fill="#3a5946" font-size="11.5">Silver/Gold_Plus</text>
+        </g>
+
+        <g class="comp" id="node-shrm" data-id="shrm">
+          <rect class="box" x="620" y="796" width="212" height="112" rx="7" fill="#e3f2e7" stroke="#2c7a4b" />
+          <text x="634" y="822" fill="#164228" font-size="15" font-weight="700">SHRM (RISC-V)</text>
+          <text x="634" y="843" fill="#22633c" font-size="12" font-family="ui-monospace, monospace">paddr 0x19040000</text>
+          <text x="634" y="862" fill="#22633c" font-size="12" font-family="ui-monospace, monospace">vaddr 0x00200000</text>
+          <text x="634" y="883" fill="#3a5946" font-size="11.5">DDR_FW 272.56.227</text>
+          <text x="634" y="899" fill="#3a5946" font-size="11.5">LPDDR5 PHY/freq</text>
+        </g>
+
+        <g class="comp" id="node-qupv3" data-id="qupv3">
+          <rect class="box" x="396" y="924" width="436" height="92" rx="7" fill="#e3f2e7" stroke="#2c7a4b" />
+          <text x="412" y="950" fill="#164228" font-size="16" font-weight="700">QUPv3 GENI Serial Engines (qupv3fw.elf)</text>
+          <text x="412" y="973" fill="#22633c" font-size="12.5" font-family="ui-monospace, monospace">Local SE SRAM: 0x1000..0x79C0 (HW 0x3008)</text>
+          <text x="412" y="996" fill="#3a5946" font-size="12">QSI + SEFW protocols: SPI, QSPI, I2C, I3C, UART</text>
+        </g>
+
+        <!-- COLUMN 3A: LPDDR5 DRAM — EL2 & SUBSYSTEMS -->
+        <g class="comp" id="node-hypvm" data-id="hypvm">
+          <rect class="box" x="1000" y="52" width="494" height="112" rx="7" fill="#f7f0dc" stroke="#9e7319" />
+          <text x="1016" y="78" fill="#4a360b" font-size="16" font-weight="700">NS-EL2: Gunyah Hypervisor + RM (hypvm.mbn)</text>
+          <text x="1016" y="101" fill="#855d0c" font-size="12.5" font-family="ui-monospace, monospace">0x80000000..0x8025A1A0 (PIE EL2 + GKPG RM VM)</text>
+          <text x="1016" y="124" fill="#5e4c26" font-size="12">Stage-2 MMU isolation, SMMUv3 virt, hyp_assign, memparcel</text>
+          <text x="1016" y="145" fill="#5e4c26" font-size="11.5">Dynamic DT overlay builder, gunyah-message-queue, rm-rpc</text>
+        </g>
+
+        <g class="comp" id="node-uh_rkp" data-id="uh_rkp">
+          <rect class="box" x="1000" y="180" width="494" height="96" rx="7" fill="#f7f0dc" stroke="#9e7319" />
+          <text x="1016" y="206" fill="#4a360b" font-size="16" font-weight="700">NS-EL2: Samsung uH / RKP / KDP (devcfg.mbn — Rust)</text>
+          <text x="1016" y="229" fill="#855d0c" font-size="12.5" font-family="ui-monospace, monospace">0x805A0000..0x805E65D8 | HYP DALPROP: 0x805FD000</text>
+          <text x="1016" y="253" fill="#5e4c26" font-size="12">Realtime Kernel Protection, Credential/KDP guards, DABORT traps</text>
+        </g>
+
+        <g class="comp" id="node-sec_ddr" data-id="sec_ddr">
+          <rect class="box" x="1000" y="294" width="494" height="76" rx="7" fill="#efeae0" stroke="#7c6d56" />
+          <text x="1016" y="320" fill="#2f261b" font-size="15.5" font-weight="700">DRAM Boot Buffers: sec.elf &amp; AOP/CPUCP Shared DDR</text>
+          <text x="1016" y="346" fill="#524432" font-size="12" font-family="ui-monospace, monospace">AOP: 0x80800000 | sec.elf: 0x808FF000 | CPUCP: 0x80B00000</text>
+        </g>
+
+        <g class="comp" id="node-dsps" data-id="dsps">
+          <rect class="box" x="1000" y="388" width="240" height="148" rx="7" fill="#e3f2e7" stroke="#2c7a4b" />
+          <text x="1014" y="414" fill="#164228" font-size="15" font-weight="700">Hexagon QDSP6 DSPs</text>
+          <text x="1014" y="436" fill="#22633c" font-size="12" font-family="ui-monospace, monospace">adsp: 0x86300000 (v66)</text>
+          <text x="1014" y="455" fill="#22633c" font-size="12" font-family="ui-monospace, monospace">slpi: 0x88000000 (v66)</text>
+          <text x="1014" y="474" fill="#22633c" font-size="12" font-family="ui-monospace, monospace">cdsp: 0x88900000 (v69)</text>
+          <text x="1014" y="496" fill="#3a5946" font-size="11.5">78 .so + FastRPC shells</text>
+          <text x="1014" y="518" fill="#3a5946" font-size="11">a730_zap + ipa_fws @ 0x1000</text>
+        </g>
+
+        <g class="comp" id="node-media" data-id="media">
+          <rect class="box" x="1254" y="388" width="240" height="148" rx="7" fill="#f9f3d9" stroke="#947a14" />
+          <text x="1268" y="414" fill="#473b08" font-size="15" font-weight="700">Xtensa Media Cores</text>
+          <text x="1268" y="436" fill="#7d660c" font-size="12" font-family="ui-monospace, monospace">vpu20_4v: 0x0F500000</text>
+          <text x="1268" y="455" fill="#7d660c" font-size="12" font-family="ui-monospace, monospace">evass:    0x0F500000</text>
+          <text x="1268" y="474" fill="#7d660c" font-size="12" font-family="ui-monospace, monospace">CAMERA_ICP (TITAN_680)</text>
+          <text x="1268" y="496" fill="#5c5024" font-size="11.5">Video codec &amp; EVA vision</text>
+          <text x="1268" y="518" fill="#5c5024" font-size="11.5">Camera ISP control (PIL)</text>
+        </g>
+
+        <!-- COLUMN 3B: LPDDR5 DRAM — NS-EL1 BOOTLOADERS & HLOS -->
+        <g class="comp" id="node-abl" data-id="abl">
+          <rect class="box" x="1000" y="592" width="494" height="104" rx="7" fill="#e3f0f7" stroke="#1f6f96" />
+          <text x="1016" y="618" fill="#173f57" font-size="16" font-weight="700">NS-EL1: Android Bootloader — ABL (abl.elf)</text>
+          <text x="1016" y="641" fill="#165a7a" font-size="12.5" font-family="ui-monospace, monospace">0x9FA00000 (2.3 MiB LZMA FV: LinuxLoader, Odin, QuestSOD)</text>
+          <text x="1016" y="663" fill="#3f5866" font-size="12">AVB 2.0 (vbmeta.img), Knox/FMM checks, or Odin Download Mode</text>
+          <text x="1016" y="682" fill="#3f5866" font-size="11.5">Renders imagefv.elf JPEGs (download, warning_svb, orange_state)</text>
+        </g>
+
+        <g class="comp" id="node-uefi" data-id="uefi">
+          <rect class="box" x="1000" y="722" width="494" height="92" rx="7" fill="#e3f0f7" stroke="#1f6f96" />
+          <text x="1016" y="748" fill="#173f57" font-size="16" font-weight="700">NS-EL1: XBL Core UEFI (uefi.elf + imagefv.elf)</text>
+          <text x="1016" y="771" fill="#165a7a" font-size="12.5" font-family="ui-monospace, monospace">0xA7000000 (Sec.dll + 2 Gzip FVs, ~95 ARM64 DXEs, QcomBds)</text>
+          <text x="1016" y="794" fill="#3f5866" font-size="12">UFS, USB DWC3/xHCI, Display, PMIC, VerifiedBootDxe, ScmDxeLA</text>
+        </g>
+
+        <g class="comp" id="node-ramdump" data-id="ramdump">
+          <rect class="box" x="1000" y="832" width="494" height="80" rx="7" fill="#fbe7e7" stroke="#b53d3d" />
+          <text x="1016" y="858" fill="#4f1616" font-size="16" font-weight="700">NS-EL1: Crash / Ramdump Handler (XblRamdump.elf)</text>
+          <text x="1016" y="881" fill="#962929" font-size="12.5" font-family="ui-monospace, monospace">0xA7D00000 (entry) | Triggered via DLOAD cookie 0x01FD3000</text>
+          <text x="1016" y="901" fill="#6b3535" font-size="11.5">Exports DRAM/AOP/TZ/SMMU/NOC via USB Sahara, SD/FAT, UFS/NVMe</text>
+        </g>
+
+        <g class="comp" id="node-hlos" data-id="hlos">
+          <rect class="box" x="1000" y="930" width="494" height="100" rx="7" fill="#e3f0f7" stroke="#1f6f96" />
+          <text x="1016" y="956" fill="#173f57" font-size="16" font-weight="700">NS-EL1 / EL0: Android Kernel &amp; Userspace + cpusys_vm</text>
+          <text x="1016" y="979" fill="#165a7a" font-size="12.5" font-family="ui-monospace, monospace">cpusys_vm: 0xE0600000 | dm-verity | /vendor/firmware_mnt &amp; /dsp</text>
+          <text x="1016" y="1000" fill="#3f5866" font-size="12">HALs: kg-service, vaultkeeperd, KeyMint, adsprpc (FastRPC), QMI</text>
+          <text x="1016" y="1018" fill="#3f5866" font-size="11.5">Protected at runtime by EL2 Gunyah + Samsung uH/RKP/KDP</text>
+        </g>
+
+        <!-- COMMUNICATION EDGES -->
+        <path id="edge-pbl-qfprom" class="edge" stroke="#b35920" marker-end="url(#arr-purple)" d="M 169 144 L 169 168" />
+        <text id="lbl-pbl-qfprom" class="edge-label" x="182" y="160" fill="#9c4614">Read PK_HASH</text>
+
+        <path id="edge-pbl-tme" class="edge" stroke="#1f6f96" marker-end="url(#arr-cyan)" d="M 314 102 L 396 102" />
+        <text id="lbl-pbl-tme" class="edge-label" x="355" y="92" text-anchor="middle" fill="#165a7a">Boot</text>
+
+        <path id="edge-ufs-xbl" class="edge" stroke="#1f6f96" marker-end="url(#arr-cyan)" d="M 314 330 C 352 330, 352 256, 396 256" />
+        <text id="lbl-ufs-xbl" class="edge-label" x="355" y="302" text-anchor="middle" fill="#165a7a">Load</text>
+
+        <path id="edge-tme-xbl" class="edge" stroke="#1f6f96" marker-end="url(#arr-cyan)" d="M 614 164 L 614 188" />
+        <text id="lbl-tme-xbl" class="edge-label" x="626" y="180" fill="#165a7a">Auth + Release</text>
+
+        <path id="edge-xbl-ddr" class="edge" stroke="#9e7319" marker-end="url(#arr-amber)" d="M 832 246 C 910 246, 910 332, 1000 332" />
+        <text id="lbl-xbl-ddr" class="edge-label" x="895" y="282" text-anchor="middle" fill="#855d0c">DCB / sec.elf</text>
+
+        <path id="edge-xbl-mcu" class="edge" stroke="#2c7a4b" marker-end="url(#arr-green)" d="M 396 284 C 350 284, 350 732, 396 732" />
+        <text id="lbl-xbl-mcu" class="edge-label" x="355" y="640" text-anchor="middle" fill="#22633c">Load MCUs</text>
+
+        <path id="edge-xbl-tz" class="edge" stroke="#b35920" marker-end="url(#arr-purple)" d="M 614 312 L 614 336" />
+        <text id="lbl-xbl-tz" class="edge-label" x="626" y="328" fill="#9c4614">Load TZ</text>
+
+        <path id="edge-xbl-hyp" class="edge" stroke="#b35920" marker-end="url(#arr-purple)" d="M 832 222 C 910 222, 910 108, 1000 108" />
+        <text id="lbl-xbl-hyp" class="edge-label" x="895" y="152" text-anchor="middle" fill="#9c4614">Load EL2 Hyp/uH</text>
+
+        <path id="edge-xbl-uefi" class="edge" stroke="#1f6f96" marker-end="url(#arr-cyan)" d="M 832 268 C 905 288, 905 768, 1000 768" />
+        <text id="lbl-xbl-uefi" class="edge-label" x="895" y="638" text-anchor="middle" fill="#165a7a">Hand off UEFI</text>
+
+        <path id="edge-xbl-ramdump" class="edge" stroke="#b53d3d" marker-end="url(#arr-rose)" d="M 832 286 C 920 348, 920 872, 1000 872" />
+        <text id="lbl-xbl-ramdump" class="edge-label" x="902" y="844" text-anchor="middle" fill="#962929">DLOAD Cookie</text>
+
+        <path id="edge-el3-qtee" class="edge" stroke="#b35920" marker-end="url(#arr-purple)" d="M 614 432 L 614 456" />
+
+        <path id="edge-qtee-rpmb" class="edge" stroke="#b35920" marker-end="url(#arr-purple)" d="M 396 534 L 314 514" />
+        <text id="lbl-qtee-rpmb" class="edge-label" x="355" y="512" text-anchor="middle" fill="#9c4614">RPMB/SFS</text>
+
+        <path id="edge-qtee-qfprom" class="edge" stroke="#b35920" marker-end="url(#arr-purple)" d="M 396 484 C 344 440, 344 220, 314 220" />
+        <text id="lbl-qtee-qfprom" class="edge-label" x="355" y="352" text-anchor="middle" fill="#9c4614">Fuses</text>
+
+        <path id="edge-qtee-spu" class="edge" stroke="#b35920" marker-end="url(#arr-purple)" d="M 396 582 C 352 645, 360 922, 314 922" />
+        <text id="lbl-qtee-spu" class="edge-label" x="355" y="868" text-anchor="middle" fill="#9c4614">spcom</text>
+
+        <path id="edge-uefi-abl" class="edge" stroke="#1f6f96" marker-end="url(#arr-cyan)" d="M 1247 722 L 1247 696" />
+        <text id="lbl-uefi-abl" class="edge-label" x="1259" y="714" fill="#165a7a">QcomBds</text>
+
+        <path id="edge-abl-tz" class="edge" stroke="#b35920" marker-end="url(#arr-purple)" d="M 1000 634 C 910 618, 910 546, 832 546" />
+        <text id="lbl-abl-tz" class="edge-label" x="905" y="576" text-anchor="middle" fill="#9c4614">SMC (bksecapp/iccc/kg/km41)</text>
+
+        <path id="edge-abl-hlos" class="edge" stroke="#1f6f96" marker-end="url(#arr-cyan)" d="M 1494 644 C 1516 690, 1516 980, 1494 980" />
+        <text id="lbl-abl-hlos" class="edge-label" x="1485" y="920" text-anchor="end" fill="#165a7a">LinuxLoader (AVB2)</text>
+
+        <path id="edge-abl-io" class="edge" stroke="#b53d3d" marker-end="url(#arr-rose)" d="M 1000 664 C 850 684, 520 780, 314 780" />
+        <text id="lbl-abl-io" class="edge-label" x="580" y="772" text-anchor="middle" fill="#962929">Odin USB + imagefv JPEGs</text>
+
+        <path id="edge-ramdump-io" class="edge" stroke="#b53d3d" marker-end="url(#arr-rose)" d="M 1000 888 C 780 930, 480 830, 314 810" />
+        <text id="lbl-ramdump-io" class="edge-label" x="580" y="902" text-anchor="middle" fill="#962929">Sahara USB / SD / EDL</text>
+
+        <path id="edge-hlos-hyp" class="edge" stroke="#9e7319" marker-end="url(#arr-amber)" d="M 1000 964 L 882 964 C 858 964, 858 228, 882 228 L 1000 228" />
+        <text id="lbl-hlos-hyp" class="edge-label" x="868" y="366" text-anchor="middle" fill="#855d0c">HVC / Stage-2</text>
+
+        <path id="edge-hlos-tz" class="edge" stroke="#b35920" marker-end="url(#arr-purple)" d="M 1000 996 L 892 996 C 868 996, 868 586, 832 586" />
+        <text id="lbl-hlos-tz" class="edge-label" x="876" y="748" text-anchor="middle" fill="#9c4614">SMC / MINK</text>
+
+        <path id="edge-hlos-dsp" class="edge" stroke="#2c7a4b" marker-end="url(#arr-green)" d="M 1000 980 L 896 980 C 874 980, 874 494, 896 494 L 1000 494" />
+        <text id="lbl-hlos-dsp" class="edge-label" x="886" y="556" text-anchor="middle" fill="#22633c">FastRPC / PIL</text>
+
+        <path id="edge-hlos-mcu" class="edge" stroke="#2c7a4b" marker-end="url(#arr-green)" d="M 1000 1012 C 908 1026, 870 732, 832 732" />
+        <text id="lbl-hlos-mcu" class="edge-label" x="882" y="1014" text-anchor="middle" fill="#22633c">RPMh / SCMI</text>
+
+        <path id="edge-fs-dsp" class="edge" stroke="#2c7a4b" marker-end="url(#arr-green)" d="M 314 636 L 856 636 C 876 636, 876 462, 896 462 L 1000 462" />
+        <text id="lbl-fs-dsp" class="edge-label" x="614" y="631" text-anchor="middle" fill="#22633c">Mount FW/.so</text>
+        </g>
+
+        <!-- PHYSICAL SM8450 DIE FLOORPLAN (APPROXIMATE SCHEMATIC OVERLAY) -->
+        <g id="dieLayer" style="display:none">
+          <!-- PoP LPDDR5 DRAM Package Frame (Top Stack) -->
+          <g id="die-zone-pop" class="die-zone">
+            <rect x="216" y="16" width="1176" height="132" rx="10" fill="#efe7da" stroke="#a69074" stroke-width="1.6" stroke-dasharray="6 4" />
+            <text x="232" y="38" fill="#5c4934" font-size="12.5" font-weight="700" letter-spacing="0.06em">OFF-DIE PoP STACK: LPDDR5 SYSTEM DRAM (MOUNTED OVER SoC PACKAGE)</text>
+          </g>
+
+          <!-- Left Off-Die Storage & Board I/O -->
+          <g id="die-zone-board" class="die-zone">
+            <rect x="16" y="166" width="184" height="1091" rx="10" fill="#efe7da" stroke="#a69074" stroke-width="1.6" stroke-dasharray="6 4" />
+            <text x="28" y="190" fill="#5c4934" font-size="12" font-weight="700" letter-spacing="0.05em">OFF-DIE UFS &amp; I/O</text>
+          </g>
+
+          <!-- Main SM8450 Silicon Die Perimeter (11.76 x 10.91 mm exact ratio) -->
+          <rect x="216" y="166" width="1176" height="1091" rx="12" fill="#f3ecdf" stroke="#8f6b43" stroke-width="2.4" />
+          <text x="234" y="188" fill="#5c4228" font-size="12.5" font-weight="700" letter-spacing="0.05em">SM8450 SILICON DIE — APPROX. SCHEMATIC FLOORPLAN (Samsung 4LPE/4LPX · 11.76 × 10.91 mm ≈ 128.3 mm²)</text>
+
+          <!-- PoP DRAM Blocks -->
+          <g class="comp die-comp" data-id="sec_ddr">
+            <rect class="box" x="230" y="50" width="206" height="84" rx="6" fill="#efeae0" stroke="#7c6d56" />
+            <text x="242" y="74" fill="#2f261b" font-size="14" font-weight="700">Boot DDR Buffers</text>
+            <text x="242" y="95" fill="#524432" font-size="11.5" font-family="ui-monospace, monospace">sec.elf 0x808FF000</text>
+            <text x="242" y="114" fill="#635543" font-size="11">AOP / CPUCP Shared</text>
+          </g>
+          <g class="comp die-comp" data-id="hypvm">
+            <rect class="box" x="448" y="50" width="210" height="84" rx="6" fill="#f7f0dc" stroke="#9e7319" />
+            <text x="460" y="74" fill="#4a360b" font-size="14" font-weight="700">EL2 Gunyah + RM</text>
+            <text x="460" y="95" fill="#855d0c" font-size="11.5" font-family="ui-monospace, monospace">0x80000000..8025A1A0</text>
+            <text x="460" y="114" fill="#5e4c26" font-size="11">Stage-2 / SMMUv3</text>
+          </g>
+          <g class="comp die-comp" data-id="uh_rkp">
+            <rect class="box" x="670" y="50" width="178" height="84" rx="6" fill="#f7f0dc" stroke="#9e7319" />
+            <text x="682" y="74" fill="#4a360b" font-size="14" font-weight="700">EL2 uH / RKP</text>
+            <text x="682" y="95" fill="#855d0c" font-size="11.5" font-family="ui-monospace, monospace">0x805A0000 (Rust)</text>
+            <text x="682" y="114" fill="#5e4c26" font-size="11">Kernel / KDP Guard</text>
+          </g>
+          <g class="comp die-comp" data-id="abl">
+            <rect class="box" x="860" y="50" width="134" height="84" rx="6" fill="#e3f0f7" stroke="#1f6f96" />
+            <text x="872" y="74" fill="#173f57" font-size="14" font-weight="700">ABL</text>
+            <text x="872" y="95" fill="#165a7a" font-size="11" font-family="ui-monospace, monospace">0x9FA00000</text>
+            <text x="872" y="114" fill="#3f5866" font-size="11">AVB2 / Odin</text>
+          </g>
+          <g class="comp die-comp" data-id="uefi">
+            <rect class="box" x="1006" y="50" width="120" height="84" rx="6" fill="#e3f0f7" stroke="#1f6f96" />
+            <text x="1018" y="74" fill="#173f57" font-size="14" font-weight="700">UEFI</text>
+            <text x="1018" y="95" fill="#165a7a" font-size="11" font-family="ui-monospace, monospace">0xA7000000</text>
+            <text x="1018" y="114" fill="#3f5866" font-size="11">~95 DXEs</text>
+          </g>
+          <g class="comp die-comp" data-id="ramdump">
+            <rect class="box" x="1138" y="50" width="118" height="84" rx="6" fill="#fbe7e7" stroke="#b53d3d" />
+            <text x="1150" y="74" fill="#4f1616" font-size="13.5" font-weight="700">Ramdump</text>
+            <text x="1150" y="95" fill="#962929" font-size="11" font-family="ui-monospace, monospace">0xA7D00000</text>
+            <text x="1150" y="114" fill="#6b3535" font-size="11">Sahara/DLOAD</text>
+          </g>
+          <g class="comp die-comp" data-id="hlos">
+            <rect class="box" x="1268" y="50" width="114" height="84" rx="6" fill="#e3f0f7" stroke="#1f6f96" />
+            <text x="1280" y="74" fill="#173f57" font-size="14" font-weight="700">HLOS</text>
+            <text x="1280" y="95" fill="#165a7a" font-size="11" font-family="ui-monospace, monospace">0xE0600000+</text>
+            <text x="1280" y="114" fill="#3f5866" font-size="11">Android EL1</text>
+          </g>
+
+          <!-- Off-Die UFS & External I/O -->
+          <g class="comp die-comp" data-id="ufs_bl">
+            <rect class="box" x="26" y="214" width="164" height="180" rx="7" fill="#efeae0" stroke="#7c6d56" />
+            <text x="38" y="242" fill="#2f261b" font-size="14.5" font-weight="700">UFS 3.1 BL</text>
+            <text x="38" y="266" fill="#524432" font-size="11.5" font-family="ui-monospace, monospace">xbl_s · tz · abl</text>
+            <text x="38" y="286" fill="#524432" font-size="11.5" font-family="ui-monospace, monospace">hypvm · uefi</text>
+            <text x="38" y="306" fill="#524432" font-size="11.5" font-family="ui-monospace, monospace">vbmeta · devcfg</text>
+            <text x="38" y="332" fill="#635543" font-size="11">MBNv7 + SignerV2</text>
+          </g>
+          <g class="comp die-comp" data-id="rpmb">
+            <rect class="box" x="26" y="414" width="164" height="156" rx="7" fill="#f7ebe1" stroke="#b35920" />
+            <text x="38" y="442" fill="#4a250e" font-size="14.5" font-weight="700">UFS RPMB</text>
+            <text x="38" y="466" fill="#9c4614" font-size="11.5">HMAC Counter</text>
+            <text x="38" y="488" fill="#63422c" font-size="11" font-family="ui-monospace, monospace">km41 · bksecapp</text>
+            <text x="38" y="508" fill="#63422c" font-size="11" font-family="ui-monospace, monospace">tz_kg · vk</text>
+          </g>
+          <g class="comp die-comp" data-id="ufs_fs">
+            <rect class="box" x="26" y="590" width="164" height="166" rx="7" fill="#e3f2e7" stroke="#2c7a4b" />
+            <text x="38" y="618" fill="#164228" font-size="14.5" font-weight="700">NON-HLOS</text>
+            <text x="38" y="642" fill="#22633c" font-size="11.5" font-family="ui-monospace, monospace">NON-HLOS.bin</text>
+            <text x="38" y="662" fill="#22633c" font-size="11.5" font-family="ui-monospace, monospace">dspso.bin</text>
+            <text x="38" y="688" fill="#3a5946" font-size="11">38 TAs + 78 .so</text>
+          </g>
+          <g class="comp die-comp" data-id="ext_io">
+            <rect class="box" x="26" y="776" width="164" height="204" rx="7" fill="#fbe7e7" stroke="#b53d3d" />
+            <text x="38" y="804" fill="#4f1616" font-size="14.5" font-weight="700">External I/O</text>
+            <text x="38" y="828" fill="#962929" font-size="11.5">USB: Odin / EDL</text>
+            <text x="38" y="848" fill="#962929" font-size="11.5">Sahara Crash</text>
+            <text x="38" y="868" fill="#962929" font-size="11.5">Display Panel</text>
+            <text x="38" y="892" fill="#6b3535" font-size="11">imagefv.elf UI</text>
+          </g>
+
+          <!-- ON-DIE TOP BAR: DDR PHY / SHRM & SYSTEM CACHE / NOC -->
+          <g class="comp die-comp" data-id="shrm">
+            <rect class="box" x="234" y="204" width="342" height="58" rx="6" fill="#e3f2e7" stroke="#2c7a4b" />
+            <text x="248" y="228" fill="#164228" font-size="14.5" font-weight="700">SHRM (RISC-V) + 4× LPDDR5 PHYs</text>
+            <text x="248" y="249" fill="#22633c" font-size="11.5" font-family="ui-monospace, monospace">0x19040000 · DDR_FW 272.56.227 · PHY/Freq</text>
+          </g>
+          <g class="comp die-comp" data-id="noc_slc">
+            <rect class="box" x="592" y="204" width="782" height="58" rx="6" fill="#efeae0" stroke="#7c6d56" />
+            <text x="608" y="228" fill="#2f261b" font-size="14.5" font-weight="700">6 MB System Level Cache (SLC) &amp; Coherent System NoC Backbone</text>
+            <text x="608" y="249" fill="#524432" font-size="11.5" font-family="ui-monospace, monospace">Connects Kryo CPU ↔ Adreno GPU ↔ Hexagon AI/DSPs ↔ PoP LPDDR5 Controllers</text>
+          </g>
+
+          <!-- ON-DIE UPPER LEFT: SECURITY ROOT ISLAND -->
+          <g class="comp die-comp" data-id="pbl">
+            <rect class="box" x="234" y="278" width="165" height="96" rx="6" fill="#e3f0f7" stroke="#1f6f96" />
+            <text x="246" y="304" fill="#173f57" font-size="14.5" font-weight="700">PBL BootROM</text>
+            <text x="246" y="325" fill="#165a7a" font-size="11" font-family="ui-monospace, monospace">Mask ROM RoT</text>
+            <text x="246" y="346" fill="#3f5866" font-size="11">OEM_ID = 0x20</text>
+          </g>
+          <g class="comp die-comp" data-id="qfprom">
+            <rect class="box" x="411" y="278" width="165" height="96" rx="6" fill="#f7ebe1" stroke="#b35920" />
+            <text x="423" y="304" fill="#4a250e" font-size="14.5" font-weight="700">QFPROM Fuses</text>
+            <text x="423" y="325" fill="#9c4614" font-size="11" font-family="ui-monospace, monospace">0x221C01B0..</text>
+            <text x="423" y="346" fill="#63422c" font-size="11">SHA-384 PK_HASH</text>
+          </g>
+          <g class="comp die-comp" data-id="tme">
+            <rect class="box" x="234" y="388" width="342" height="98" rx="6" fill="#e3f0f7" stroke="#1f6f96" />
+            <text x="248" y="414" fill="#173f57" font-size="15" font-weight="700">TME (RISC-V) + Sequencer HW</text>
+            <text x="248" y="436" fill="#165a7a" font-size="12" font-family="ui-monospace, monospace">SEQ_FW: 0x2211C000 | TME_FW: 0x20400000</text>
+            <text x="248" y="458" fill="#3f5866" font-size="11.5">Hardware RoT auth, anti-rollback, IPCC_OSTME</text>
+          </g>
+          <g class="comp die-comp" data-id="spu">
+            <rect class="box" x="234" y="500" width="342" height="102" rx="6" fill="#f7ebe1" stroke="#b35920" />
+            <text x="248" y="526" fill="#4a250e" font-size="15" font-weight="700">SPU260 Isolated Security Island</text>
+            <text x="248" y="548" fill="#9c4614" font-size="12" font-family="ui-monospace, monospace">spss1p.* @ 0x1000 (QTI SPU Root)</text>
+            <text x="248" y="570" fill="#63422c" font-size="11.5">StrongBox / SecNVM / hwvault via spcom</text>
+          </g>
+
+          <!-- ON-DIE UPPER CENTER: KRYO CPU TRI-CLUSTER -->
+          <g class="comp die-comp" data-id="kryo_cpu">
+            <rect class="box" x="592" y="278" width="408" height="324" rx="7" fill="#e3f0f7" stroke="#1f6f96" />
+            <text x="608" y="304" fill="#173f57" font-size="15.5" font-weight="700">Kryo CPU Cluster (ARMv9 8-Core + L3)</text>
+            <text x="608" y="326" fill="#165a7a" font-size="12" font-family="ui-monospace, monospace">1× Cortex-X2 · 3× Cortex-A710 · 4× Cortex-A510</text>
+            <text x="608" y="352" fill="#3f5866" font-size="12">Executes XBL Loader (Boot Core), EL3 Monitor,</text>
+            <text x="608" y="372" fill="#3f5866" font-size="12">EL2 Gunyah + Rust uH/RKP, UEFI, ABL &amp; Android HLOS</text>
+            <!-- Internal CPU sub-blocks visual annotations -->
+            <rect x="608" y="392" width="120" height="84" rx="5" fill="#d5e7f2" stroke="#5b95b3" />
+            <text x="620" y="416" fill="#173f57" font-size="12.5" font-weight="700">1× Cortex-X2</text>
+            <text x="620" y="436" fill="#165a7a" font-size="11" font-family="ui-monospace, monospace">Prime Core</text>
+            <text x="620" y="454" fill="#3f5866" font-size="10.5">1 MB L2 Cache</text>
+            <rect x="736" y="392" width="124" height="84" rx="5" fill="#d5e7f2" stroke="#5b95b3" />
+            <text x="748" y="416" fill="#173f57" font-size="12.5" font-weight="700">3× A710</text>
+            <text x="748" y="436" fill="#165a7a" font-size="11" font-family="ui-monospace, monospace">Perf Cores</text>
+            <text x="748" y="454" fill="#3f5866" font-size="10.5">512 KB L2 ea.</text>
+            <rect x="868" y="392" width="118" height="84" rx="5" fill="#d5e7f2" stroke="#5b95b3" />
+            <text x="880" y="416" fill="#173f57" font-size="12.5" font-weight="700">4× A510</text>
+            <text x="880" y="436" fill="#165a7a" font-size="11" font-family="ui-monospace, monospace">Eff Cores</text>
+            <text x="880" y="454" fill="#3f5866" font-size="10.5">Shared 6MB L3</text>
+          </g>
+          <g class="comp die-comp" data-id="tz_el3">
+            <rect class="box" x="608" y="492" width="184" height="94" rx="6" fill="#f7ebe1" stroke="#b35920" />
+            <text x="620" y="516" fill="#4a250e" font-size="14" font-weight="700">EL3 Monitor</text>
+            <text x="620" y="537" fill="#9c4614" font-size="11" font-family="ui-monospace, monospace">0x14680000 (IMEM)</text>
+            <text x="620" y="558" fill="#63422c" font-size="11">PSCI / SMC Dispatch</text>
+          </g>
+          <g class="comp die-comp" data-id="cpucp">
+            <rect class="box" x="802" y="492" width="184" height="94" rx="6" fill="#e3f2e7" stroke="#2c7a4b" />
+            <text x="814" y="516" fill="#164228" font-size="14" font-weight="700">CPUCP (RISC-V)</text>
+            <text x="814" y="537" fill="#22633c" font-size="11" font-family="ui-monospace, monospace">0x17D00000 (TCM)</text>
+            <text x="814" y="558" fill="#3a5946" font-size="11">Cluster DVFS / CPRh</text>
+          </g>
+
+          <!-- ON-DIE RIGHT QUADRANT: ADRENO 730 GPU -->
+          <g class="comp die-comp" data-id="gpu_adreno">
+            <rect class="box" x="1016" y="278" width="358" height="440" rx="7" fill="#f9f3d9" stroke="#947a14" />
+            <text x="1034" y="308" fill="#473b08" font-size="16" font-weight="700">Adreno 730 GPU</text>
+            <text x="1034" y="332" fill="#7d660c" font-size="12" font-family="ui-monospace, monospace">Shader Cores + GMEM + GMU</text>
+            <text x="1034" y="356" fill="#5c5024" font-size="12">Loaded via a730_zap.mbn / .b00..b02</text>
+            <text x="1034" y="376" fill="#5c5024" font-size="12">(signed MBN v7 in NON-HLOS.bin)</text>
+            <rect x="1036" y="402" width="318" height="292" rx="6" fill="#f3eac2" stroke="#baa03a" stroke-dasharray="4 3" />
+            <text x="1054" y="432" fill="#473b08" font-size="13.5" font-weight="700">Largest Single Compute Block (~25% Die)</text>
+            <text x="1054" y="458" fill="#5c5024" font-size="12">• 3D Graphics / Vulkan / OpenCL Compute</text>
+            <text x="1054" y="482" fill="#5c5024" font-size="12">• Isolated by Gunyah SMMUv3 Stage-2</text>
+            <text x="1054" y="506" fill="#5c5024" font-size="12">• Zap microcode authenticated by TZ</text>
+          </g>
+
+          <!-- ON-DIE LOWER LEFT: ALWAYS-ON & PERIPHERALS -->
+          <g class="comp die-comp" data-id="aop">
+            <rect class="box" x="234" y="618" width="342" height="174" rx="6" fill="#e3f2e7" stroke="#2c7a4b" />
+            <text x="248" y="646" fill="#164228" font-size="15.5" font-weight="700">Always-On Island: AOP (Cortex-M/R)</text>
+            <text x="248" y="670" fill="#22633c" font-size="12" font-family="ui-monospace, monospace">SRAM 0x0B000000 | IMEM 0x14699000</text>
+            <text x="248" y="694" fill="#3a5946" font-size="12">PMIC sequencing, RPMh TCS, clock/rail votes</text>
+            <text x="248" y="716" fill="#3a5946" font-size="12">Remains powered in deep sleep states</text>
+          </g>
+          <g class="comp die-comp" data-id="qupv3">
+            <rect class="box" x="234" y="806" width="342" height="188" rx="6" fill="#e3f2e7" stroke="#2c7a4b" />
+            <text x="248" y="834" fill="#164228" font-size="15.5" font-weight="700">QUPv3 GENI &amp; High-Speed PHYs</text>
+            <text x="248" y="858" fill="#22633c" font-size="12" font-family="ui-monospace, monospace">SE SRAM: 0x1000..0x79C0 (qupv3fw.elf)</text>
+            <text x="248" y="882" fill="#3a5946" font-size="12">SPI / QSPI / I2C / I3C / UART micro-engines</text>
+            <text x="248" y="904" fill="#3a5946" font-size="12">UFS 3.1 Host PHY + USB3 DWC3/xHCI + PCIe</text>
+          </g>
+
+          <!-- ON-DIE CENTER: OCIMEM / PIMEM & HEXAGON DSPs -->
+          <g class="comp die-comp" data-id="ocimem_xbl">
+            <rect class="box" x="592" y="618" width="198" height="108" rx="6" fill="#e3f0f7" stroke="#1f6f96" />
+            <text x="604" y="644" fill="#173f57" font-size="14" font-weight="700">OCIMEM SRAM</text>
+            <text x="604" y="665" fill="#165a7a" font-size="11" font-family="ui-monospace, monospace">XBL 0x14819000</text>
+            <text x="604" y="683" fill="#165a7a" font-size="11" font-family="ui-monospace, monospace">xbl_config · apdp</text>
+            <text x="604" y="704" fill="#3f5866" font-size="11">DLOAD 0x01FD3000</text>
+          </g>
+          <g class="comp die-comp" data-id="tz_qtee">
+            <rect class="box" x="802" y="618" width="198" height="108" rx="6" fill="#f7ebe1" stroke="#b35920" />
+            <text x="814" y="644" fill="#4a250e" font-size="14" font-weight="700">PIMEM / QTEE</text>
+            <text x="814" y="665" fill="#9c4614" font-size="11" font-family="ui-monospace, monospace">TZ 0x1C00B000</text>
+            <text x="814" y="683" fill="#63422c" font-size="11">GPCE + MINK IPC</text>
+            <text x="814" y="704" fill="#63422c" font-size="11">BL + 38 HLOS TAs</text>
+          </g>
+          <g class="comp die-comp" data-id="dsps">
+            <rect class="box" x="592" y="740" width="408" height="254" rx="7" fill="#e3f2e7" stroke="#2c7a4b" />
+            <text x="608" y="768" fill="#164228" font-size="15.5" font-weight="700">Hexagon QDSP6 &amp; 7th Gen AI Engine</text>
+            <text x="608" y="792" fill="#22633c" font-size="12" font-family="ui-monospace, monospace">ADSP: 0x86300000 | SLPI: 0x88000000 | CDSP: 0x88900000</text>
+            <text x="608" y="816" fill="#3a5946" font-size="12">Scalar + HVX Vector + HTP Tensor Accelerators</text>
+            <text x="608" y="838" fill="#3a5946" font-size="12">FastRPC (/dev/adsprpc-smd), 78 .so modules (dspso.bin)</text>
+            <rect x="608" y="858" width="118" height="114" rx="5" fill="#d3ebd9" stroke="#53996d" />
+            <text x="620" y="886" fill="#164228" font-size="13" font-weight="700">CDSP NPU</text>
+            <text x="620" y="908" fill="#22633c" font-size="11">Hexagon v69</text>
+            <text x="620" y="928" fill="#3a5946" font-size="10.5">AI Tensor/HVX</text>
+            <rect x="736" y="858" width="118" height="114" rx="5" fill="#d3ebd9" stroke="#53996d" />
+            <text x="748" y="886" fill="#164228" font-size="13" font-weight="700">ADSP</text>
+            <text x="748" y="908" fill="#22633c" font-size="11">Hexagon v66</text>
+            <text x="748" y="928" fill="#3a5946" font-size="10.5">Audio / Voice</text>
+            <rect x="864" y="858" width="120" height="114" rx="5" fill="#d3ebd9" stroke="#53996d" />
+            <text x="876" y="886" fill="#164228" font-size="13" font-weight="700">SLPI</text>
+            <text x="876" y="908" fill="#22633c" font-size="11">Hexagon v66</text>
+            <text x="876" y="928" fill="#3a5946" font-size="10.5">Sensors Hub</text>
+          </g>
+
+          <!-- ON-DIE LOWER RIGHT: SPECTRA ISP, VPU, EVA, DISPLAY DPU -->
+          <g class="comp die-comp" data-id="media">
+            <rect class="box" x="1016" y="732" width="358" height="262" rx="7" fill="#f9f3d9" stroke="#947a14" />
+            <text x="1034" y="760" fill="#473b08" font-size="15.5" font-weight="700">Spectra ISP · VPU · EVA · Display DPU</text>
+            <text x="1034" y="784" fill="#7d660c" font-size="12" font-family="ui-monospace, monospace">vpu20_4v / evass @ 0x0F500000 (Xtensa)</text>
+            <text x="1034" y="806" fill="#7d660c" font-size="12" font-family="ui-monospace, monospace">CAMERA_ICP.elf (TITAN_680_220)</text>
+            <text x="1034" y="832" fill="#5c5024" font-size="12">• Triple 18-bit Camera ISP pipeline</text>
+            <text x="1034" y="854" fill="#5c5024" font-size="12">• Hardware 8K Video Encode/Decode (VPU)</text>
+            <text x="1034" y="876" fill="#5c5024" font-size="12">• Enhanced Video Analytics (EVA)</text>
+            <text x="1034" y="898" fill="#5c5024" font-size="12">• Display Processing Unit (DPU / MDSS)</text>
+          </g>
+
+          <!-- ON-DIE BOTTOM PERIPHERY: SNAPDRAGON X65 5G MODEM & CONNECTIVITY -->
+          <g class="comp die-comp" data-id="x65_modem">
+            <rect class="box" x="234" y="1010" width="1140" height="228" rx="7" fill="#efeae0" stroke="#7c6d56" />
+            <text x="252" y="1040" fill="#2f261b" font-size="16" font-weight="700">Integrated Snapdragon X65 5G Modem-RF Baseband · IPA · FastConnect 6900</text>
+            <text x="252" y="1066" fill="#524432" font-size="12.5" font-family="ui-monospace, monospace">Modem FW &amp; IPA (ipa_fws @ 0x1000) loaded from NON-HLOS.bin &amp; modem partition via Linux PIL + QMI</text>
+            <text x="252" y="1094" fill="#635543" font-size="12">• Peripheral edge placement routes baseband/connectivity pins directly out to RF transceivers, mmWave/Sub-6 modules &amp; antennas</text>
+            <text x="252" y="1118" fill="#635543" font-size="12">• Isolated from HLOS memory via Gunyah SMMUv3 stage-2 mappings and MSA/TZ PIL authentication</text>
+            <text x="252" y="1142" fill="#635543" font-size="12">• Note: BL/ firmware directory focuses on AP/SoC bootloaders &amp; NON-HLOS subsystems; baseband modem image lives in modem/CP</text>
+          </g>
+
+          <!-- DIE-MODE TRACE OVERLAYS -->
+          <path class="edge die-edge" data-edge="pbl-qfprom" stroke="#b35920" marker-end="url(#arr-purple)" d="M 399 326 L 411 326" />
+          <path class="edge die-edge" data-edge="pbl-tme" stroke="#1f6f96" marker-end="url(#arr-cyan)" d="M 316 374 L 316 388" />
+          <path class="edge die-edge" data-edge="ufs-xbl" stroke="#1f6f96" marker-end="url(#arr-cyan)" d="M 190 304 C 220 304, 210 672, 592 672" />
+          <path class="edge die-edge" data-edge="tme-xbl" stroke="#1f6f96" marker-end="url(#arr-cyan)" d="M 576 437 C 584 437, 584 652, 592 652" />
+          <path class="edge die-edge" data-edge="xbl-ddr" stroke="#9e7319" marker-end="url(#arr-amber)" d="M 620 618 C 620 380, 333 380, 333 134" />
+          <path class="edge die-edge" data-edge="xbl-mcu" stroke="#2c7a4b" marker-end="url(#arr-green)" d="M 592 690 L 576 690" />
+          <path class="edge die-edge" data-edge="xbl-tz" stroke="#b35920" marker-end="url(#arr-purple)" d="M 690 618 L 690 586" />
+          <path class="edge die-edge" data-edge="xbl-hyp" stroke="#b35920" marker-end="url(#arr-purple)" d="M 650 618 C 650 380, 553 260, 553 134" />
+          <path class="edge die-edge" data-edge="xbl-uefi" stroke="#1f6f96" marker-end="url(#arr-cyan)" d="M 740 618 C 740 360, 1066 260, 1066 134" />
+          <path class="edge die-edge" data-edge="xbl-ramdump" stroke="#b53d3d" marker-end="url(#arr-rose)" d="M 760 618 C 760 360, 1197 260, 1197 134" />
+          <path class="edge die-edge" data-edge="el3-qtee" stroke="#b35920" marker-end="url(#arr-purple)" d="M 700 586 L 700 610 L 901 610 L 901 618" />
+          <path class="edge die-edge" data-edge="qtee-rpmb" stroke="#b35920" marker-end="url(#arr-purple)" d="M 802 642 L 796 642 L 796 610 L 210 610 C 202 610, 202 492, 190 492" />
+          <path class="edge die-edge" data-edge="qtee-qfprom" stroke="#b35920" marker-end="url(#arr-purple)" d="M 830 618 L 830 610 L 584 610 L 584 326 L 576 326" />
+          <path class="edge die-edge" data-edge="qtee-spu" stroke="#b35920" marker-end="url(#arr-purple)" d="M 802 666 L 796 666 L 796 610 L 584 610 L 584 551 L 576 551" />
+          <path class="edge die-edge" data-edge="uefi-abl" stroke="#1f6f96" marker-end="url(#arr-cyan)" d="M 1006 92 L 994 92" />
+          <path class="edge die-edge" data-edge="abl-tz" stroke="#b35920" marker-end="url(#arr-purple)" d="M 927 134 L 927 196 L 1008 196 L 1008 672 L 1000 672" />
+          <path class="edge die-edge" data-edge="abl-hlos" stroke="#1f6f96" marker-end="url(#arr-cyan)" d="M 927 50 C 927 24, 1325 24, 1325 50" />
+          <path class="edge die-edge" data-edge="abl-io" stroke="#b53d3d" marker-end="url(#arr-rose)" d="M 860 110 L 860 156 L 204 156 L 204 840 L 190 840" />
+          <path class="edge die-edge" data-edge="ramdump-io" stroke="#b53d3d" marker-end="url(#arr-rose)" d="M 1197 134 L 1197 156 L 204 156 L 204 880 L 190 880" />
+          <path class="edge die-edge" data-edge="hlos-hyp" stroke="#9e7319" marker-end="url(#arr-amber)" d="M 1290 134 C 1290 184, 553 184, 553 134" />
+          <path class="edge die-edge" data-edge="hlos-tz" stroke="#b35920" marker-end="url(#arr-purple)" d="M 1315 134 L 1315 196 L 1008 196 L 1008 672 L 1000 672" />
+          <path class="edge die-edge" data-edge="hlos-dsp" stroke="#2c7a4b" marker-end="url(#arr-green)" d="M 1340 134 L 1340 196 L 1008 196 L 1008 790 L 1000 790" />
+          <path class="edge die-edge" data-edge="hlos-mcu" stroke="#2c7a4b" marker-end="url(#arr-green)" d="M 1276 134 L 1276 196 L 584 196 L 584 690 L 576 690" />
+          <path class="edge die-edge" data-edge="fs-dsp" stroke="#2c7a4b" marker-end="url(#arr-green)" d="M 190 673 L 208 673 L 208 800 L 584 800 L 584 850 L 592 850" />
+        </g>
+      </g>
+    </svg>
+
+    <button class="panel-reopen" id="panelReopenBtn">◧ Open Details</button>
+
+    <aside class="side-panel" id="sidePanel">
+      <div class="panel-head">
+        <span class="ph-badge" id="panelPhaseBadge">Phase Details</span>
+        <button class="nav-btn" id="closePanelBtn" style="padding:2px 7px;" title="Collapse panel">▶ Hide</button>
+      </div>
+
+      <div class="panel-body">
+        <div class="card" id="phaseCard">
+          <h2>Active Phase</h2>
+          <h3 id="phaseTitle"></h3>
+          <p id="phaseDesc"></p>
+          <div class="kv">
+            <div class="k">Memory</div><div class="v" id="phaseMem"></div>
+            <div class="k">IPC / Buses</div><div class="v" id="phaseBuses"></div>
+          </div>
+          <div class="pill-list" id="phaseFiles"></div>
+          <div class="pill-list" id="activeChips" style="margin-top:8px;"></div>
+        </div>
+
+        <div class="card" id="compCard">
+          <div class="card-hdr">
+            <h2>Component Inspector</h2>
+            <button class="nav-btn" id="focusCompBtn" style="padding:2px 6px; font-size:10.5px;" title="Pan to selected component">⌖ Locate</button>
+          </div>
+          <h3 id="compTitle">Select a block</h3>
+          <p id="compDesc"></p>
+          <div class="kv" id="compKv"></div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="legend-hud">
+      <span><i class="dot" style="background:#1f6f96"></i> Boot / UEFI / XBL / ABL</span>
+      <span><i class="dot" style="background:#b35920"></i> TZ / QTEE / QFPROM / RPMB</span>
+      <span><i class="dot" style="background:#9e7319"></i> EL2 Gunyah + Rust uH/RKP</span>
+      <span><i class="dot" style="background:#2c7a4b"></i> MCUs &amp; Hexagon DSPs</span>
+      <span><i class="dot" style="background:#947a14"></i> Xtensa Media</span>
+      <span><i class="dot" style="background:#b53d3d"></i> Odin / Sahara Crash / I/O</span>
+      <span style="color:#7a6855">· <kbd>C</kbd> Center · <kbd>[</kbd>/<kbd>]</kbd> Opacity · <kbd>?</kbd> Keys</span>
+    </div>
+
+    <div class="kbd-help" id="kbdHelp">
+      <div class="kbd-help-head">
+        <span>Keyboard Shortcuts</span>
+        <button class="nav-btn" id="closeHelpBtn" style="padding:1px 6px;">✕</button>
+      </div>
+      <div class="kbd-grid">
+        <div class="kbd-key"><kbd>←</kbd> / <kbd>→</kbd></div><div>Previous / Next boot phase</div>
+        <div class="kbd-key"><kbd>0</kbd>–<kbd>6</kbd>, <kbd>A</kbd>, <kbd>B</kbd></div><div>Jump to Phase 0–6, Odin (A), Ramdump (B)</div>
+        <div class="kbd-key"><kbd>Space</kbd></div><div>Play / Pause phase walk-through</div>
+        <div class="kbd-key"><kbd>C</kbd></div><div>Center camera on active phase</div>
+        <div class="kbd-key"><kbd>F</kbd></div><div>Fit full SoC diagram into view</div>
+        <div class="kbd-key"><kbd>+</kbd> / <kbd>−</kbd> / <kbd>R</kbd></div><div>Zoom in, zoom out, reset 1:1</div>
+        <div class="kbd-key"><kbd>[</kbd> / <kbd>]</kbd></div><div>Decrease / Increase inactive opacity (5%)</div>
+        <div class="kbd-key"><kbd>O</kbd></div><div>Toggle inactive opacity (0% ↔ 35%)</div>
+        <div class="kbd-key"><kbd>D</kbd> / <kbd>Esc</kbd></div><div>Toggle side details / close help</div>
+        <div class="kbd-key"><kbd>V</kbd></div><div>Toggle Architecture Map ↔ SM8450 Die</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const COMPONENTS = {
+  pbl: {
+    title: "PBL (Primary Boot Loader — Mask ROM)",
+    desc: "Immutable Qualcomm silicon BootROM executing from hardware reset vector. Reads QFPROM eFuses for OEM_PK_HASH and debug disables, switches to EDL (Sahara/Firehose) if forced or boot fails, otherwise loads xbl_s.melf from UFS.",
+    kv: {
+      "Execution": "On-chip Mask ROM",
+      "RoT Fuse": "OEM_PK_HASH = 3981b448... (SHA-384)",
+      "OEM / Model": "OEM_ID = 0x0020 (Samsung), Model 0x0001",
+      "Next Stage": "TME + XBL Loader (xbl_s.melf)"
+    }
+  },
+  qfprom: {
+    title: "QFPROM Hardware eFuses",
+    desc: "One-time programmable silicon fuses anchoring hardware Secure Boot, anti-rollback, Samsung Knox Warranty Bit, Knox Guard state, and JTAG/debug locks. Initialized/checked alongside sec.elf.",
+    kv: {
+      "Base Range": "0x221C01B0 .. 0x221C0560 (sec.elf)",
+      "OEM_ID": "0x0020 (Samsung)",
+      "PK Hash": "SHA-384 Samsung ECDSA-384 ROOT 3",
+      "Readers": "PBL, TME, XBL, QTEE (tz_iccc/bksecapp)"
+    }
+  },
+  ufs_bl: {
+    title: "UFS Flash — Bootloader & Verified Images",
+    desc: "Raw UFS partitions storing signed MBN v7 Qualcomm/Samsung images and vbmeta.img (AVB 2.0). Note: uefi.elf uses SignerVer02 footer without MBN ELF signature; NON-HLOS and dspso hold filesystem images.",
+    kv: {
+      "MBN v7 Format": "xbl_s, tz, hypvm, abl, devcfg, xbl_config, TAs",
+      "Footer Signed": "uefi.elf, imagefv.elf (SignerVer02)",
+      "AVB 2.0": "vbmeta.img (SHA256_RSA4096, Rollback 1)",
+      "Patch Level": "2025-11-01 (S901U1UES8GYK3)"
+    }
+  },
+  ufs_fs: {
+    title: "UFS — NON-HLOS.bin & dspso.bin",
+    desc: "Mounted by Android at /vendor/firmware_mnt and /dsp. NON-HLOS.bin contains subsystem ELF+MDT images and 38 TrustZone TAs (prov.* are UIE encrypted). dspso.bin holds Hexagon CDSP/ADSP/SLPI shared libraries.",
+    kv: {
+      "NON-HLOS.bin": "116 MiB FAT16 (modem, dsps, media, 38 TAs)",
+      "dspso.bin": "64 MiB ext4 (78 Hexagon .so + FastRPC shells)",
+      "Encrypted TAs": "prov.mbn + prov.b00..b07 (UIE KeyID 10e35b1e20130724)",
+      "Plaintext FW": "adsp, cdsp, slpi, spss1p, vpu20, evass"
+    }
+  },
+  rpmb: {
+    title: "UFS RPMB & SFS (Secure File System)",
+    desc: "Replay-Protected Memory Block bound to the SoC via QTEE + storsec.mbn. Stores anti-rollback counters, KeyMint/Keymaster state, Knox Warranty Bit / HDM / KG lock state, and VaultKeeper data.",
+    kv: {
+      "Controller": "storsec.mbn + QTEE SFS",
+      "UEFI Access": "uefi_sec.mbn + storsec.mbn",
+      "Samsung Clients": "bksecapp, tz_kg, tz_hdm, tz_iccc, vaultkeeper",
+      "Security": "HMAC-SHA256 replay-protected counters"
+    }
+  },
+  ext_io: {
+    title: "External I/O: USB, Display & Crash Targets",
+    desc: "Physical interfaces active during bootloader UI, Odin flashing, or crash collection. Panel timings are parsed from Panel_*.xml inside xbl_config.elf; Odin/Download UI JPEGs reside in imagefv.elf.",
+    kv: {
+      "USB Modes": "PBL EDL, XblRamdump Sahara, ABL Odin",
+      "Display UI": "imagefv.elf (13 JPEGs: download, svb, SUD_0..10)",
+      "Controllers": "USB DWC3/xHCI, Display MDSS DXEs",
+      "Dump Media": "USB Sahara, SD/FAT, UFS/NVMe"
+    }
+  },
+  spu: {
+    title: "SPU260 (ARM Secure Processing Unit)",
+    desc: "Dedicated isolated security processor running spss1p.* firmware (loaded at 0x1000, signed by QTI SPU MBNv7 root). Provides StrongBox Keymaster / hardware-isolated cryptographic storage over spcom.",
+    kv: {
+      "Image": "spss1p.mbn / .mdt / .b00..b10 (NON-HLOS)",
+      "Load Addr": "0x00001000 (isolated SPU RAM)",
+      "Signer": "QTI SPU Root (not Samsung OEM root)",
+      "IPC": "spcom / spss_utils <-> QTEE & HLOS"
+    }
+  },
+  tme: {
+    title: "TME (Trust Management Engine — RISC-V)",
+    desc: "Hardware Root-of-Trust microcontroller running FreeRTOS TME_FW and SEQ_FW sequencer microcode. Authenticates XBL Loader in OCIMEM, manages anti-rollback counters, and communicates over IPCC_OSTME.",
+    kv: {
+      "SEQ_FW r79": "0x2211C000 (0x16000 bytes)",
+      "TME_FW": "0x20400000 .. 0x2043B4DC (RISC-V)",
+      "Mailbox": "IPCC_OSTME / GLink / SMEM",
+      "Source Image": "xbl_s.melf segments"
+    }
+  },
+  ocimem_xbl: {
+    title: "OCIMEM: XBL Stage-1 Loader & xbl_config",
+    desc: "First AArch64 bootloader stage (xbl_s.melf). Parses xbl_config.elf (DCB DDR calibration tables, PMIC/CPR settings, early DTBs), verifies apdp.mbn debug policy, triggers SHRM LPDDR5 training, and loads TZ, Hyp, AOP, CPUCP, and UEFI.",
+    kv: {
+      "XBL Entry": "0x14819000 (entry 0x14819FA8, AArch64)",
+      "xbl_config": "0x1494E000 (920 KB: DCB, Panel_*.xml, DTBs)",
+      "apdp.mbn": "0x149FD000 (Debug Policy)",
+      "DLOAD Cookie": "0x01FD3000 -> branches to XblRamdump"
+    }
+  },
+  tz_el3: {
+    title: "IMEM: ARMv8 EL3 Monitor (tz.mbn)",
+    desc: "Highest ARM application processor privilege level running in IMEM. Handles PSCI core power states, warm-boot vectors, FIQ/EL3 traps, and dispatches SMC calls between NS-EL1/EL2 and S-EL1 QTEE.",
+    kv: {
+      "Address": "0x14680000 .. 0x146939D8 (IMEM)",
+      "Privilege": "ARM64 EL3 (Secure Monitor)",
+      "Services": "PSCI, SMC Fast Calls, WarmBoot",
+      "Image": "tz.mbn (signed MBN v7)"
+    }
+  },
+  tz_qtee: {
+    title: "PIMEM / TZ RAM: S-EL1 QTEE & Trusted Apps",
+    desc: "Qualcomm Trusted Execution Environment running at S-EL1. Hosts MINK IPC, SMMU stage-1/2 security policy, GPCE crypto engine, and both BL-partition TAs (km41, bksecapp, tz_kg, vaultkeeper) and NON-HLOS TAs (hwvault, widevine, encrypted prov.*).",
+    kv: {
+      "Addresses": "devcfg 0x1C000000 | QTEE 0x1C00B000",
+      "BL TAs (9)": "uefi_sec, storsec, km41, bksecapp, engmode, tz_hdm, tz_iccc, tz_kg, vaultkeeper",
+      "NON-HLOS TAs": "38 TAs (prov.* UIE encrypted; hwvault/skm/proca/hdcp/wv plaintext)",
+      "IPC": "SMC -> MINK object invocations"
+    }
+  },
+  aop: {
+    title: "AOP (Always-On Processor — ARM Cortex-M/R)",
+    desc: "Manages always-on power rails, PMIC sequencing, clock scaling, and DDR/CX power voting via RPMh. Configured by aop_devcfg.mbn.",
+    kv: {
+      "SRAM / IMEM": "0x0B000000 | 0x14699000",
+      "DDR Region": "0x80800000 .. 0x80882000 (aop_devcfg)",
+      "Architecture": "ARM Cortex-M/R (32-bit LE)",
+      "IPC": "RPMh (TCS mailboxes), SMEM"
+    }
+  },
+  cpucp: {
+    title: "CPUCP (CPU Control Processor — RISC-V)",
+    desc: "Dedicated RISC-V controller executing DVFS, thermal/current limits, CPRh voltage scaling, and ACD droop mitigation across Silver, Gold, and Gold_Plus CPU clusters.",
+    kv: {
+      "TCM / DDR": "0x17D00000 | 0x80B00000",
+      "Architecture": "RISC-V RV32",
+      "Features": "DVFS, CPRh, L3 scaling, SCMI",
+      "Files": "cpucp.elf (MBN v7)"
+    }
+  },
+  shrm: {
+    title: "SHRM (SHared Resource Manager — RISC-V)",
+    desc: "Trains and manages LPDDR5 PHY timings, DQS calibration, and dynamic DRAM frequency switching using DCB tables from xbl_config.elf.",
+    kv: {
+      "Phys / Virt": "0x19040000 / 0x00200000",
+      "Version": "DDR_FW 272.56.227 (waipio)",
+      "Architecture": "RISC-V",
+      "Files": "shrm.elf"
+    }
+  },
+  qupv3: {
+    title: "QUPv3 GENI Serial Engines",
+    desc: "Programmable serial micro-engines handling SPI, QSPI, I2C, I3C, and UART buses for sensors, fingerprint, NFC, touch, and debug UART.",
+    kv: {
+      "Local SRAM": "0x00001000 .. 0x000079C0 (HW 0x3008)",
+      "Protocols": "QSI + SEFW: SPI, QSPI, I2C, I3C, UART",
+      "Files": "qupv3fw.elf (signed MBN v7)"
+    }
+  },
+  hypvm: {
+    title: "Gunyah Hypervisor + Resource Manager (EL2)",
+    desc: "Qualcomm Type-1 bare-metal EL2 hypervisor isolating HLOS VM, Trusted/Protected VMs, and peripheral SMMUv3 DMA mappings via hyp_assign and memparcels.",
+    kv: {
+      "Address": "0x80000000 .. 0x8025A1A0 (PIE EL2)",
+      "Components": "Gunyah Kernel + GKPG Resource Manager VM",
+      "Capabilities": "Stage-2 MMU, SMMUv3 virt, rm-rpc, DT overlay",
+      "Files": "hypvm.mbn"
+    }
+  },
+  uh_rkp: {
+    title: "Samsung uH / RKP / KDP (Rust — EL2)",
+    desc: "Samsung Micro-Hypervisor written in Rust running alongside Gunyah at NS-EL2 (loaded from devcfg.mbn). Protects Linux kernel text/rodata, page tables, credentials (KDP), and traps unauthorized writes.",
+    kv: {
+      "Address": "0x805A0000 .. 0x805E65D8 (DALPROP 0x805FD000)",
+      "Language": "Rust (uh_entry, uh_guest_mem, rkp, kdp)",
+      "Protection": "Stage-2 RO/NX kernel guards, HVC handlers",
+      "Source Image": "devcfg.mbn (shared EL2 + TZ segments)"
+    }
+  },
+  sec_ddr: {
+    title: "DRAM Boot Buffers (sec.elf & MCU Shared DDR)",
+    desc: "Early DRAM control structures parsed by XBL/TME/TZ: sec.elf (0x808FF000) holds QFPROM fuse shadow configs, alongside AOP (0x80800000) and CPUCP (0x80B00000) shared DDR buffers.",
+    kv: {
+      "sec.elf Addr": "0x808FF000 (fuse programming table)",
+      "AOP DDR": "0x80800000 .. 0x80882000",
+      "CPUCP DDR": "0x80B00000",
+      "Files": "sec.elf, aop_devcfg.mbn"
+    }
+  },
+  dsps: {
+    title: "Hexagon QDSP6 Subsystems (ADSP / CDSP / SLPI)",
+    desc: "Three Hexagon DSP complexes loaded by Linux PIL from NON-HLOS.bin, dynamically linking 78 .so modules and FastRPC shells from dspso.bin.",
+    kv: {
+      "ADSP / SLPI": "0x86300000 / 0x88000000 (Hexagon v66)",
+      "CDSP": "0x88900000 (Hexagon v69 NPU/compute)",
+      "IPC": "FastRPC (/dev/adsprpc-smd), GLink, QMI",
+      "Extras": "a730_zap (GPU microcode), ipa_fws @ 0x1000"
+    }
+  },
+  media: {
+    title: "Xtensa Media & ISP Subsystems",
+    desc: "Dedicated Tensilica Xtensa processors for hardware video encode/decode (vpu20_4v), Enhanced Video Analytics (evass), and camera ISP (CAMERA_ICP TITAN_680).",
+    kv: {
+      "VPU / EVA": "0x0F500000 (vpu20_4v, evass — Xtensa)",
+      "Camera ISP": "CAMERA_ICP.elf (TITAN_680_220, MBN v7)",
+      "Loader": "Linux PIL from /vendor/firmware_mnt"
+    }
+  },
+  abl: {
+    title: "ABL (Android Bootloader — abl.elf)",
+    desc: "UEFI application launched by QcomBds from abl.elf. Normal boot runs LinuxLoader, verifying vbmeta.img (AVB 2.0) and consulting Samsung TZ TAs before jumping to Linux. Alternate key-combo/flag enters Odin Download Mode.",
+    kv: {
+      "DRAM Base": "0x9FA00000 (2.3 MiB LZMA FV)",
+      "Apps Inside": "LinuxLoader, Odin, Cryptest, QuestSOD, MdtpApp",
+      "Samsung TAs": "bksecapp, tz_iccc, tz_kg, tz_hdm, km41",
+      "Odin Check": "SignerVer02 footer, FMM/KG/Knox policies"
+    }
+  },
+  uefi: {
+    title: "XBL Core UEFI (uefi.elf + imagefv + Core_NON-HLOS)",
+    desc: "ARM64 EDK2/UEFI DXE environment (~95 drivers) managing UFS, USB, Display, PMIC, Crypto, ScmDxeLA, and Samsung boot DXEs before transferring control to abl.elf.",
+    kv: {
+      "DRAM Base": "0xA7000000 (~3 MiB: Sec.dll + 2 Gzip FVs)",
+      "Signing": "SignerVer02 Samsung Footer (no MBN ELF sig)",
+      "UI Assets": "imagefv.elf (13 JPEGs + font resources)",
+      "QTEE TAs": "uefi_sec.mbn + storsec.mbn"
+    }
+  },
+  ramdump: {
+    title: "XblRamdump Crash Handler (XblRamdump.elf)",
+    desc: "Standalone crash collection binary invoked by XBL Loader when the OCIMEM DLOAD cookie (0x01FD3000) is active or a fatal reset occurs. Dumps full DRAM, AOP, TZ, SMMU, and NOC state.",
+    kv: {
+      "Entry Point": "0xA7D00000 (AArch64 ELF)",
+      "Trigger": "DLOAD cookie 0x01FD3000 / fatal SoC panic",
+      "Outputs": "USB Sahara, SD/FAT, UFS/NVMe, or EDL fallback",
+      "File": "XblRamdump.elf (signed MBN v7)"
+    }
+  },
+  hlos: {
+    title: "Android HLOS (Linux Kernel, Userspace & cpusys_vm)",
+    desc: "Main Android OS executing at NS-EL1/EL0 under continuous Gunyah + Rust uH/RKP/KDP protection. Verifies rootfs via dm-verity, mounts NON-HLOS/dspso, boots DSP/media/SPU subsystems, and runs Samsung security HALs.",
+    kv: {
+      "Protected VM": "cpusys_vm @ 0xE0600000",
+      "EL2 Guard": "Gunyah Stage-2 + Samsung Rust uH/RKP/KDP",
+      "Security HALs": "kg-service, vaultkeeperd, KeyMint, PROCA/FIVE, DRK",
+      "IPC": "SMC/QSEECOM, HVC, FastRPC (/dev/adsprpc-smd), RPMh, SCMI"
+    }
+  },
+  kryo_cpu: {
+    title: "Kryo CPU Tri-Cluster (ARMv9 8-Core Silicon Block)",
+    desc: "Application processor cluster on the SM8450 die: 1× Cortex-X2 Prime + 3× Cortex-A710 Performance + 4× Cortex-A510 Efficiency with 6 MB shared L3/DSU. Executes XBL Loader (boot core), EL3 Monitor, EL2 Gunyah + Rust uH/RKP, UEFI, ABL, Ramdump, and Android HLOS.",
+    kv: {
+      "Cores": "1× X2 + 3× A710 + 4× A510 (ARMv9)",
+      "DVFS Control": "CPUCP (RISC-V @ 0x17D00000) + AOP",
+      "Boot Stages": "XBL -> EL3 -> EL2 -> UEFI -> ABL -> Linux",
+      "Layout Note": "Approximate SM8450 die placement (top-center)"
+    }
+  },
+  gpu_adreno: {
+    title: "Adreno 730 GPU Complex",
+    desc: "Largest single compute block on the SM8450 silicon die (~25% area). Runs Vulkan/OpenGL/OpenCL workloads with dedicated GMU and GMEM, plus a730_zap microcode loaded from NON-HLOS.bin and authenticated via TZ.",
+    kv: {
+      "Firmware": "a730_zap.mbn / .mdt / .b00..b02 @ 0x1000",
+      "Isolation": "SMMUv3 Stage-2 controlled by Gunyah",
+      "Process": "Samsung 4LPE / 4LPX",
+      "Layout Note": "Approximate SM8450 die placement (right quadrant)"
+    }
+  },
+  noc_slc: {
+    title: "6 MB System Level Cache (SLC) & Coherent NoC",
+    desc: "System-wide Network-on-Chip backbone and 6 MB SLC bridging Kryo CPU, Adreno 730 GPU, Hexagon DSPs, Media engines, and the 4-channel LPDDR5 memory controllers.",
+    kv: {
+      "SLC Size": "6 MB System Level Cache",
+      "DRAM Link": "4× LPDDR5 PHYs managed by SHRM",
+      "Security": "XPU / SMMUv3 / Stage-2 memory firewalls",
+      "Layout Note": "Central interconnect spine near DRAM PHYs"
+    }
+  },
+  x65_modem: {
+    title: "Snapdragon X65 5G Modem-RF & FastConnect 6900",
+    desc: "Integrated 5G baseband and Wi-Fi/BT peripheral complex positioned along the die edge for RF transceiver pins. Isolated by Gunyah SMMUv3 and PIL; modem firmware resides outside the AP BL/ partition set.",
+    kv: {
+      "Modem": "Snapdragon X65 5G Baseband + IPA (ipa_fws @ 0x1000)",
+      "Connectivity": "FastConnect 6900 Wi-Fi 6E / BT 5.2",
+      "Control Plane": "Linux PIL + QMI + IPA offload",
+      "Layout Note": "Approximate peripheral strip on SM8450 die"
+    }
+  }
+};
+
+const NODE_BOUNDS = {
+  pbl:        { x: 24,   y: 52,  w: 290, h: 92  },
+  qfprom:     { x: 24,   y: 168, w: 290, h: 104 },
+  ufs_bl:     { x: 24,   y: 292, w: 290, h: 148 },
+  rpmb:       { x: 24,   y: 460, w: 290, h: 108 },
+  ufs_fs:     { x: 24,   y: 588, w: 290, h: 112 },
+  ext_io:     { x: 24,   y: 720, w: 290, h: 122 },
+  spu:        { x: 24,   y: 862, w: 290, h: 122 },
+  tme:        { x: 396,  y: 52,  w: 436, h: 112 },
+  ocimem_xbl: { x: 396,  y: 188, w: 436, h: 124 },
+  tz_el3:     { x: 396,  y: 336, w: 436, h: 96  },
+  tz_qtee:    { x: 396,  y: 456, w: 436, h: 164 },
+  aop:        { x: 396,  y: 684, w: 436, h: 96  },
+  cpucp:      { x: 396,  y: 796, w: 212, h: 112 },
+  shrm:       { x: 620,  y: 796, w: 212, h: 112 },
+  qupv3:      { x: 396,  y: 924, w: 436, h: 92  },
+  hypvm:      { x: 1000, y: 52,  w: 494, h: 112 },
+  uh_rkp:     { x: 1000, y: 180, w: 494, h: 96  },
+  sec_ddr:    { x: 1000, y: 294, w: 494, h: 76  },
+  dsps:       { x: 1000, y: 388, w: 240, h: 148 },
+  media:      { x: 1254, y: 388, w: 240, h: 148 },
+  abl:        { x: 1000, y: 592, w: 494, h: 104 },
+  uefi:       { x: 1000, y: 722, w: 494, h: 92  },
+  ramdump:    { x: 1000, y: 832, w: 494, h: 80  },
+  hlos:       { x: 1000, y: 930, w: 494, h: 100 }
+};
+
+const DIE_BOUNDS = {
+  sec_ddr:    { x: 230,  y: 50,   w: 206,  h: 84  },
+  hypvm:      { x: 448,  y: 50,   w: 210,  h: 84  },
+  uh_rkp:     { x: 670,  y: 50,   w: 178,  h: 84  },
+  abl:        { x: 860,  y: 50,   w: 134,  h: 84  },
+  uefi:       { x: 1006, y: 50,   w: 120,  h: 84  },
+  ramdump:    { x: 1138, y: 50,   w: 118,  h: 84  },
+  hlos:       { x: 1268, y: 50,   w: 114,  h: 84  },
+  ufs_bl:     { x: 26,   y: 214,  w: 164,  h: 180 },
+  rpmb:       { x: 26,   y: 414,  w: 164,  h: 156 },
+  ufs_fs:     { x: 26,   y: 590,  w: 164,  h: 166 },
+  ext_io:     { x: 26,   y: 776,  w: 164,  h: 204 },
+  shrm:       { x: 234,  y: 204,  w: 342,  h: 58  },
+  noc_slc:    { x: 592,  y: 204,  w: 782,  h: 58  },
+  pbl:        { x: 234,  y: 278,  w: 165,  h: 96  },
+  qfprom:     { x: 411,  y: 278,  w: 165,  h: 96  },
+  tme:        { x: 234,  y: 388,  w: 342,  h: 98  },
+  spu:        { x: 234,  y: 500,  w: 342,  h: 102 },
+  kryo_cpu:   { x: 592,  y: 278,  w: 408,  h: 324 },
+  tz_el3:     { x: 608,  y: 492,  w: 184,  h: 94  },
+  cpucp:      { x: 802,  y: 492,  w: 184,  h: 94  },
+  gpu_adreno: { x: 1016, y: 278,  w: 358,  h: 440 },
+  aop:        { x: 234,  y: 618,  w: 342,  h: 174 },
+  qupv3:      { x: 234,  y: 806,  w: 342,  h: 188 },
+  ocimem_xbl: { x: 592,  y: 618,  w: 198,  h: 108 },
+  tz_qtee:    { x: 802,  y: 618,  w: 198,  h: 108 },
+  dsps:       { x: 592,  y: 740,  w: 408,  h: 254 },
+  media:      { x: 1016, y: 732,  w: 358,  h: 262 },
+  x65_modem:  { x: 234,  y: 1010, w: 1140, h: 228 }
+};
+
+const ZONES = [
+  { id: "zone-silicon",   baseY: 16,  baseH: 994, nodes: ["pbl", "qfprom", "ufs_bl", "rpmb", "ufs_fs", "ext_io", "spu"] },
+  { id: "zone-sram",      baseY: 16,  baseH: 624, nodes: ["tme", "ocimem_xbl", "tz_el3", "tz_qtee"] },
+  { id: "zone-mcu",       baseY: 652, baseH: 378, nodes: ["aop", "cpucp", "shrm", "qupv3"] },
+  { id: "zone-dram-sys",  baseY: 16,  baseH: 536, nodes: ["hypvm", "uh_rkp", "sec_ddr", "dsps", "media"] },
+  { id: "zone-dram-hlos", baseY: 564, baseH: 482, nodes: ["abl", "uefi", "ramdump", "hlos"] }
+];
+
+const PHASES = [
+  {
+    id: "p0",
+    label: "0. PBL & RoT",
+    branch: false,
+    title: "Phase 0 — Mask ROM (PBL) & QFPROM Hardware Root",
+    desc: "At power-on, immutable Mask ROM (PBL) reads QFPROM eFuses (OEM_PK_HASH = SHA-384 of Samsung ECDSA384 ROOT 3, OEM_ID=0x20), reads xbl_s.melf from UFS flash, and loads TME + XBL Loader into on-chip SRAM.",
+    mem: "Mask ROM + TME SRAM (0x2211C000, 0x20400000) + OCIMEM (0x14819000)",
+    buses: "Hardware Fuse Bus, UFS DMA, SRAM Load",
+    files: ["xbl_s.melf", "sec.elf (fuses)"],
+    activeNodes: ["pbl", "qfprom", "ufs_bl", "tme", "ocimem_xbl"],
+    dieNodes: ["kryo_cpu"],
+    activeEdges: ["pbl-qfprom", "pbl-tme", "ufs-xbl"]
+  },
+  {
+    id: "p1",
+    label: "1. TME & XBL",
+    branch: false,
+    title: "Phase 1 — TME Bring-Up & XBL Stage-1 Loader",
+    desc: "TME Sequencer (SEQ_FW r79) and RISC-V FreeRTOS TME_FW authenticate XBL Loader (AArch64 @ 0x14819FA8) and enforce anti-rollback. XBL parses xbl_config.elf (DDR calibration DCB bins, CPR, early DTBs), checks apdp.mbn debug policy & sec.elf fuses, and prepares DRAM.",
+    mem: "TME (0x20400000) + OCIMEM (0x14819000, 0x1494E000, 0x149FD000)",
+    buses: "IPCC_OSTME, GLink, SMEM, Fuse Checks",
+    files: ["xbl_s.melf", "xbl_config.elf", "apdp.mbn", "sec.elf"],
+    activeNodes: ["tme", "ocimem_xbl", "qfprom", "ufs_bl", "sec_ddr"],
+    dieNodes: ["kryo_cpu", "noc_slc"],
+    activeEdges: ["tme-xbl", "ufs-xbl", "xbl-ddr"]
+  },
+  {
+    id: "p2",
+    label: "2. SoC MCUs",
+    branch: false,
+    title: "Phase 2 — SHRM (LPDDR5), AOP, CPUCP & QUPv3",
+    desc: "XBL loads SHRM (RISC-V @ 0x19040000) to train and initialize LPDDR5 DRAM, then brings up AOP + aop_devcfg (ARM Cortex-M/R @ 0x0B000000 / 0x80800000) for PMIC rails/clocks, CPUCP (RISC-V @ 0x17D00000) for DVFS, and QUPv3 GENI serial engines (SPI/I2C/I3C/UART).",
+    mem: "SHRM (0x19040000), AOP (0x0B000000/0x80800000), CPUCP (0x17D00000), QUPv3 SRAM",
+    buses: "RPMh, SCMI, GENI SPI/I2C/I3C/UART",
+    files: ["shrm.elf", "aop.mbn", "aop_devcfg.mbn", "cpucp.elf", "qupv3fw.elf"],
+    activeNodes: ["ocimem_xbl", "shrm", "aop", "cpucp", "qupv3", "sec_ddr"],
+    dieNodes: ["kryo_cpu", "noc_slc"],
+    activeEdges: ["xbl-mcu", "xbl-ddr"]
+  },
+  {
+    id: "p3",
+    label: "3. TZ & Hyp",
+    branch: false,
+    title: "Phase 3 — EL3 Monitor, QTEE & Gunyah + Samsung uH/RKP",
+    desc: "Once DRAM is online, XBL loads tz.mbn into IMEM (EL3 @ 0x14680000) and PIMEM (S-EL1 QTEE @ 0x1C00B000), loads devcfg.mbn DALPROP + Rust Samsung uH/RKP/KDP (@ 0x805A0000), and boots Gunyah EL2 Hypervisor (@ 0x80000000) to establish Stage-2 isolation and SMMUv3 rules.",
+    mem: "EL3 IMEM (0x14680000), QTEE (0x1C00B000), Gunyah (0x80000000), uH/RKP (0x805A0000)",
+    buses: "SMC, HVC, MINK IPC, Stage-2 SMMUv3, RPMB",
+    files: ["tz.mbn", "hypvm.mbn", "devcfg.mbn"],
+    activeNodes: ["ocimem_xbl", "tz_el3", "tz_qtee", "hypvm", "uh_rkp", "rpmb", "qfprom"],
+    dieNodes: ["kryo_cpu", "noc_slc"],
+    activeEdges: ["xbl-tz", "xbl-hyp", "el3-qtee", "qtee-rpmb", "qtee-qfprom"]
+  },
+  {
+    id: "p4",
+    label: "4. UEFI",
+    branch: false,
+    title: "Phase 4 — XBL Core UEFI DXE Environment (uefi.elf)",
+    desc: "XBL hands off to uefi.elf (@ 0xA7000000). Sec.dll starts DxeCore and ~95 ARM64 DXE drivers (UFS, USB, Display, PMIC, VerifiedBootDxe, ScmDxeLA, Samsung DXEs). QTEE loads uefi_sec.mbn and storsec.mbn for authenticated UEFI variables and UFS write-protection; QcomBds launches abl.elf.",
+    mem: "UEFI DRAM (0xA7000000, 3 MiB) + QTEE TAs (uefi_sec, storsec)",
+    buses: "SMC (ScmDxeLA -> QTEE), UFS, Display, USB",
+    files: ["uefi.elf", "uefi_sec.mbn", "storsec.mbn", "Core_NON-HLOS.bin"],
+    activeNodes: ["ocimem_xbl", "uefi", "tz_qtee", "rpmb", "abl"],
+    dieNodes: ["kryo_cpu", "noc_slc"],
+    activeEdges: ["xbl-uefi", "uefi-abl", "qtee-rpmb"]
+  },
+  {
+    id: "p5",
+    label: "5. ABL & AVB",
+    branch: false,
+    title: "Phase 5 — ABL LinuxLoader, AVB 2.0 & Samsung Boot TAs",
+    desc: "LinuxLoader inside abl.elf (@ 0x9FA00000) verifies vbmeta.img (SHA256_RSA4096) across xbl, tz, hyp, abl, boot, vendor_boot, and chained partitions. It exchanges RoT/integrity/lock states with bksecapp.mbn (SetBlBootComplete, Warranty Bit), tz_iccc.mbn, tz_kg.mbn, tz_hdm.mbn, and km41.mbn before booting Linux.",
+    mem: "ABL DRAM (0x9FA00000) + QTEE TAs + RPMB + QFPROM",
+    buses: "SMC / MINK (ABL <-> QTEE TAs), AVB 2.0, RPMB",
+    files: ["abl.elf", "vbmeta.img", "bksecapp.mbn", "tz_iccc.mbn", "tz_kg.mbn", "tz_hdm.mbn", "km41.mbn"],
+    activeNodes: ["abl", "tz_qtee", "tz_el3", "rpmb", "qfprom", "ufs_bl", "hlos"],
+    dieNodes: ["kryo_cpu", "noc_slc"],
+    activeEdges: ["abl-tz", "el3-qtee", "qtee-rpmb", "qtee-qfprom", "abl-hlos"]
+  },
+  {
+    id: "p6",
+    label: "6. Android HLOS",
+    branch: false,
+    title: "Phase 6 — Android Kernel/Userspace, Subsystems & FastRPC",
+    desc: "Linux boots at NS-EL1 protected by EL2 Gunyah + Rust uH/RKP/KDP, verifies dm-verity via vbmeta.img, mounts NON-HLOS.bin & dspso.bin, and boots adsp/cdsp/slpi/Xtensa/SPU/cpusys_vm. Userspace HALs communicate via FastRPC, QMI, spcom, and QSEECOM/SMC with TAs (km41, vaultkeeper, tz_kg, engmode, hwvault).",
+    mem: "HLOS DRAM, cpusys_vm (0xE0600000), ADSP (0x86300000), CDSP (0x88900000), SLPI (0x88000000)",
+    buses: "HVC (uH/Gunyah), SMC/MINK, FastRPC, QMI, RPMh, SCMI, spcom",
+    files: ["NON-HLOS.bin", "dspso.bin", "vaultkeeper.mbn", "engmode.mbn", "km41.mbn", "tz_kg.mbn"],
+    activeNodes: ["hlos", "hypvm", "uh_rkp", "tz_qtee", "tz_el3", "dsps", "media", "ufs_fs", "aop", "cpucp", "spu", "rpmb"],
+    dieNodes: ["kryo_cpu", "noc_slc", "gpu_adreno", "x65_modem", "shrm", "qupv3"],
+    activeEdges: ["hlos-hyp", "hlos-tz", "hlos-dsp", "hlos-mcu", "fs-dsp", "qtee-spu", "qtee-rpmb", "el3-qtee"]
+  },
+  {
+    id: "odin",
+    label: "Branch A: Odin",
+    branch: true,
+    title: "Alternate Path A — Samsung Odin Download Mode",
+    desc: "Triggered by button combo or reboot-to-download flag: abl.elf launches the embedded Odin UEFI app instead of LinuxLoader, renders UI JPEGs from imagefv.elf (download.jpg, warning_svb.jpg, SUD_0..10.jpg), enforces Knox/FMM/KG checks, and validates SignerVer02 footers over USB.",
+    mem: "ABL DRAM (0x9FA00000) + imagefv.elf + Display/USB + TZ TAs",
+    buses: "USB (Odin Protocol), Display Panel, SMC (tz_kg/tz_iccc/bksecapp)",
+    files: ["abl.elf (Odin)", "imagefv.elf", "tz_kg.mbn", "bksecapp.mbn"],
+    activeNodes: ["uefi", "abl", "ext_io", "tz_qtee", "rpmb"],
+    dieNodes: ["kryo_cpu", "noc_slc", "qupv3"],
+    activeEdges: ["uefi-abl", "abl-io", "abl-tz", "qtee-rpmb"]
+  },
+  {
+    id: "ramdump",
+    label: "Branch B: Ramdump",
+    branch: true,
+    title: "Alternate Path B — XblRamdump Crash Collection",
+    desc: "Triggered when DLOAD cookie (0x01FD3000) is set or a fatal hardware/SoC fault occurs: XBL branches to XblRamdump.elf (@ 0xA7D00000) instead of UEFI, capturing DRAM, AOP, TZ, SMMU, and NOC state over USB Sahara, SD/FAT, UFS/NVMe, or entering PBL EDL.",
+    mem: "OCIMEM (0x14819000) + XblRamdump DRAM (0xA7D00000) + AOP/TZ regions",
+    buses: "USB Sahara, SD/HFAT/NVMe Dump, PBL EDL Fallback",
+    files: ["XblRamdump.elf", "xbl_s.melf"],
+    activeNodes: ["ocimem_xbl", "ramdump", "ext_io", "aop", "tz_el3"],
+    dieNodes: ["kryo_cpu", "noc_slc", "qupv3"],
+    activeEdges: ["xbl-ramdump", "ramdump-io"]
+  }
+];
+
+let currentPhaseIdx = 0;
+let selectedCompId = null;
+let playTimer = null;
+let ghostOpacity = 0;
+let lastNonZeroOpacity = 35;
+let viewMode = "arch";
+const cam = { x: 24, y: 18, scale: 0.9 };
+
+const stage = document.getElementById("stage");
+const svgEl = document.getElementById("archSvg");
+const viewport = document.getElementById("viewport");
+const archLayer = document.getElementById("archLayer");
+const dieLayer = document.getElementById("dieLayer");
+const viewModeBtn = document.getElementById("viewModeBtn");
+const zoomVal = document.getElementById("zoomVal");
+const sidePanel = document.getElementById("sidePanel");
+const panelToggleBtn = document.getElementById("panelToggleBtn");
+const panelReopenBtn = document.getElementById("panelReopenBtn");
+const phaseBar = document.getElementById("phaseBar");
+const ghostLabel = phaseBar.querySelector(".opacity-ctrl");
+
+PHASES.forEach((ph, idx) => {
+  const btn = document.createElement("button");
+  btn.className = "phase-btn" + (ph.branch ? " branch" : "");
+  btn.textContent = ph.label;
+  btn.onclick = () => { stopPlay(); setPhase(idx); };
+  phaseBar.insertBefore(btn, ghostLabel);
+});
+
+function applyCam() {
+  viewport.setAttribute("transform", `translate(${cam.x.toFixed(2)}, ${cam.y.toFixed(2)}) scale(${cam.scale.toFixed(4)})`);
+  zoomVal.textContent = `${Math.round(cam.scale * 100)}%`;
+}
+
+function getAvailableRect() {
+  const rect = stage.getBoundingClientRect();
+  const panelOpen = !sidePanel.classList.contains("collapsed");
+  const rightReserve = (panelOpen && rect.width > 740) ? (sidePanel.offsetWidth + 24) : 20;
+  const leftPad = 20, topPad = 16, bottomPad = 48;
+  return {
+    left: leftPad,
+    top: topPad,
+    w: Math.max(260, rect.width - leftPad - rightReserve),
+    h: Math.max(240, rect.height - topPad - bottomPad)
+  };
+}
+
+function fitBox(box, minScale = 0.45, maxScale = 1.05) {
+  const av = getAvailableRect();
+  const rawScale = Math.min(av.w / box.w, av.h / box.h);
+  cam.scale = Math.max(minScale, Math.min(maxScale, rawScale));
+  cam.x = av.left + (av.w - box.w * cam.scale) / 2 - box.x * cam.scale;
+  cam.y = av.top + (av.h - box.h * cam.scale) / 2 - box.y * cam.scale;
+  applyCam();
+}
+
+function getPhaseNodeIds(ph) {
+  return viewMode === "die" && ph.dieNodes ? [...ph.activeNodes, ...ph.dieNodes] : ph.activeNodes;
+}
+
+function getBoundsMap() {
+  return viewMode === "die" ? DIE_BOUNDS : NODE_BOUNDS;
+}
+
+function getFullSceneBox() {
+  return viewMode === "die" ? { x: 0, y: 0, w: 1412, h: 1292 } : { x: 0, y: 0, w: 1524, h: 1054 };
+}
+
+function getNodesBoundingBox(nodeIds) {
+  const bmap = getBoundsMap();
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  nodeIds.forEach(id => {
+    const b = bmap[id];
+    if (!b) return;
+    x1 = Math.min(x1, b.x);
+    y1 = Math.min(y1, b.y);
+    x2 = Math.max(x2, b.x + b.w);
+    y2 = Math.max(y2, b.y + b.h);
+  });
+  return { x: x1 - 36, y: y1 - 44, w: (x2 - x1) + 72, h: (y2 - y1) + 64 };
+}
+
+function ensureActiveVisible() {
+  const ph = PHASES[currentPhaseIdx];
+  const box = getNodesBoundingBox(getPhaseNodeIds(ph));
+  const av = getAvailableRect();
+  const cx = (box.x + box.w / 2) * cam.scale + cam.x;
+  const cy = (box.y + box.h / 2) * cam.scale + cam.y;
+  const margin = 40;
+  const outX = cx < av.left + margin || cx > av.left + av.w - margin;
+  const outY = cy < av.top + margin || cy > av.top + av.h - margin;
+  if (outX || outY) {
+    cam.x = av.left + (av.w - box.w * cam.scale) / 2 - box.x * cam.scale;
+    cam.y = av.top + (av.h - box.h * cam.scale) / 2 - box.y * cam.scale;
+    applyCam();
+  }
+}
+
+function zoomAtCenter(factor) {
+  const av = getAvailableRect();
+  const cx = av.left + av.w / 2;
+  const cy = av.top + av.h / 2;
+  const nextScale = Math.min(2.6, Math.max(0.35, cam.scale * factor));
+  const ratio = nextScale / cam.scale;
+  cam.x = cx - (cx - cam.x) * ratio;
+  cam.y = cy - (cy - cam.y) * ratio;
+  cam.scale = nextScale;
+  applyCam();
+}
+
+function panToNode(id) {
+  const b = getBoundsMap()[id];
+  if (!b) return;
+  const av = getAvailableRect();
+  const cx = b.x + b.w / 2;
+  const cy = b.y + b.h / 2;
+  cam.x = av.left + av.w / 2 - cx * cam.scale;
+  cam.y = av.top + av.h / 2 - cy * cam.scale;
+  applyCam();
+}
+
+function updateGhostStyle() {
+  const root = document.documentElement.style;
+  const op = ghostOpacity / 100;
+  root.setProperty("--ghost-opacity", op.toFixed(2));
+  root.setProperty("--ghost-edge-opacity", (op * 0.55).toFixed(2));
+  root.setProperty("--ghost-events", op > 0.05 ? "auto" : "none");
+  document.getElementById("ghostVal").textContent = `${ghostOpacity}%`;
+  updateZones();
+}
+
+function updateZones() {
+  const activeSet = new Set(PHASES[currentPhaseIdx].activeNodes);
+  const op = ghostOpacity / 100;
+
+  ZONES.forEach(z => {
+    const g = document.getElementById(z.id);
+    const rect = g.querySelector(".zone-box");
+    const title = g.querySelector(".zone-title");
+    const visNodes = z.nodes.filter(n => activeSet.has(n));
+
+    if (op > 0) {
+      g.style.opacity = visNodes.length ? "1" : op.toFixed(2);
+      g.style.pointerEvents = "none";
+      rect.setAttribute("y", z.baseY);
+      rect.setAttribute("height", z.baseH);
+      title.setAttribute("y", z.baseY + 22);
+    } else if (visNodes.length === 0) {
+      g.style.opacity = "0";
+    } else {
+      let minY = Infinity, maxY = -Infinity;
+      visNodes.forEach(n => {
+        const b = NODE_BOUNDS[n];
+        minY = Math.min(minY, b.y);
+        maxY = Math.max(maxY, b.y + b.h);
+      });
+      const yTop = minY - 36;
+      const hFit = (maxY + 14) - yTop;
+      g.style.opacity = "1";
+      rect.setAttribute("y", yTop);
+      rect.setAttribute("height", hFit);
+      title.setAttribute("y", yTop + 22);
+    }
+  });
+
+  document.querySelectorAll(".dram-tick").forEach(t => {
+    const nodeId = t.getAttribute("data-node");
+    const isAct = activeSet.has(nodeId);
+    t.style.opacity = isAct ? "1" : (op * 0.7).toFixed(2);
+  });
+}
+
+function setPhase(idx, initial = false) {
+  currentPhaseIdx = (idx + PHASES.length) % PHASES.length;
+  const ph = PHASES[currentPhaseIdx];
+
+  document.querySelectorAll(".phase-btn").forEach((b, i) => {
+    b.classList.toggle("active", i === currentPhaseIdx);
+  });
+
+  document.getElementById("panelPhaseBadge").textContent = ph.label;
+  document.getElementById("phaseTitle").textContent = ph.title;
+  document.getElementById("phaseDesc").textContent = ph.desc;
+  document.getElementById("phaseMem").textContent = ph.mem;
+  document.getElementById("phaseBuses").textContent = ph.buses;
+
+  const filesEl = document.getElementById("phaseFiles");
+  filesEl.innerHTML = "";
+  ph.files.forEach(f => {
+    const s = document.createElement("span");
+    s.className = "pill";
+    s.textContent = f;
+    filesEl.appendChild(s);
+  });
+
+  const activeNodes = getPhaseNodeIds(ph);
+  const activeSet = new Set(activeNodes);
+  document.querySelectorAll(".comp").forEach(g => {
+    const isAct = activeSet.has(g.dataset.id);
+    g.classList.toggle("active", isAct);
+    g.classList.toggle("inactive", !isAct);
+  });
+
+  const edgeSet = new Set(ph.activeEdges);
+  document.querySelectorAll(".edge").forEach(e => {
+    const key = e.dataset.edge || e.id.replace("edge-", "");
+    const isAct = edgeSet.has(key);
+    e.classList.toggle("active", isAct);
+    e.classList.toggle("inactive", !isAct);
+  });
+  document.querySelectorAll(".edge-label").forEach(l => {
+    const isAct = edgeSet.has(l.id.replace("lbl-", ""));
+    l.classList.toggle("active", isAct);
+    l.classList.toggle("inactive", !isAct);
+  });
+
+  const chipsEl = document.getElementById("activeChips");
+  chipsEl.innerHTML = "";
+  activeNodes.forEach(nid => {
+    const b = document.createElement("button");
+    b.className = "chip-btn";
+    b.dataset.nid = nid;
+    b.textContent = nid.toUpperCase();
+    b.onclick = () => selectComponent(nid, true);
+    chipsEl.appendChild(b);
+  });
+
+  updateZones();
+  if (activeNodes.length) {
+    const keepCurrent = selectedCompId && activeSet.has(selectedCompId);
+    selectComponent(keepCurrent ? selectedCompId : activeNodes[0], false);
+  }
+
+  if (initial) {
+    fitBox(viewMode === "die" ? getFullSceneBox() : getNodesBoundingBox(activeNodes), 0.55, 1.0);
+  } else {
+    ensureActiveVisible();
+  }
+}
+
+function setViewMode(mode) {
+  viewMode = mode;
+  const isDie = mode === "die";
+  archLayer.style.display = isDie ? "none" : "inline";
+  dieLayer.style.display = isDie ? "inline" : "none";
+  viewModeBtn.classList.toggle("toggled", isDie);
+  viewModeBtn.textContent = isDie ? "⊞ Arch Map" : "▣ Die Floorplan";
+  setPhase(currentPhaseIdx, false);
+  fitBox(getFullSceneBox(), 0.45, 1.0);
+}
+
+function selectComponent(id, openPanel = true) {
+  selectedCompId = id;
+  document.querySelectorAll(".comp").forEach(g => {
+    g.classList.toggle("selected", g.dataset.id === id);
+  });
+  document.querySelectorAll(".chip-btn").forEach(b => {
+    b.classList.toggle("selected", b.dataset.nid === id);
+  });
+  const c = COMPONENTS[id];
+  if (!c) return;
+  document.getElementById("compTitle").textContent = c.title;
+  document.getElementById("compDesc").textContent = c.desc;
+  const kvEl = document.getElementById("compKv");
+  kvEl.innerHTML = "";
+  Object.entries(c.kv).forEach(([k, v]) => {
+    const dk = document.createElement("div");
+    dk.className = "k";
+    dk.textContent = k;
+    const dv = document.createElement("div");
+    dv.className = "v";
+    dv.textContent = v;
+    kvEl.appendChild(dk);
+    kvEl.appendChild(dv);
+  });
+  if (openPanel) setPanelOpen(true);
+}
+
+function setPanelOpen(open) {
+  sidePanel.classList.toggle("collapsed", !open);
+  panelToggleBtn.classList.toggle("toggled", open);
+  panelReopenBtn.classList.toggle("visible", !open);
+}
+
+// Mouse / Touch Drag-to-Pan with Click Guard
+let isDragging = false;
+let dragMoved = 0;
+let suppressClick = false;
+let startX = 0, startY = 0, startCamX = 0, startCamY = 0;
+
+stage.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0 || e.target.closest(".side-panel, .panel-reopen")) return;
+  isDragging = true;
+  dragMoved = 0;
+  startX = e.clientX;
+  startY = e.clientY;
+  startCamX = cam.x;
+  startCamY = cam.y;
+  stage.classList.add("dragging");
+});
+
+window.addEventListener("pointermove", (e) => {
+  if (!isDragging) return;
+  const dx = e.clientX - startX;
+  const dy = e.clientY - startY;
+  dragMoved = Math.hypot(dx, dy);
+  if (dragMoved > 5) {
+    cam.x = startCamX + dx;
+    cam.y = startCamY + dy;
+    applyCam();
+  }
+});
+
+window.addEventListener("pointerup", () => {
+  if (!isDragging) return;
+  isDragging = false;
+  stage.classList.remove("dragging");
+  if (dragMoved > 5) {
+    suppressClick = true;
+    setTimeout(() => { suppressClick = false; }, 60);
+  }
+});
+
+stage.addEventListener("wheel", (e) => {
+  if (e.target.closest(".side-panel")) return;
+  e.preventDefault();
+  const rect = svgEl.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  const nextScale = Math.min(2.6, Math.max(0.35, cam.scale * factor));
+  const ratio = nextScale / cam.scale;
+  cam.x = mx - (mx - cam.x) * ratio;
+  cam.y = my - (my - cam.y) * ratio;
+  cam.scale = nextScale;
+  applyCam();
+}, { passive: false });
+
+document.querySelectorAll(".comp").forEach(g => {
+  g.addEventListener("click", () => {
+    if (suppressClick) return;
+    stopPlay();
+    selectComponent(g.dataset.id, true);
+  });
+});
+
+function stopPlay() {
+  if (playTimer) {
+    clearInterval(playTimer);
+    playTimer = null;
+    document.getElementById("playBtn").textContent = "▶ Auto-Play";
+  }
+}
+
+function setGhostOpacity(val) {
+  ghostOpacity = Math.max(0, Math.min(75, Math.round(val / 5) * 5));
+  if (ghostOpacity > 0) lastNonZeroOpacity = ghostOpacity;
+  document.getElementById("ghostRange").value = ghostOpacity;
+  updateGhostStyle();
+}
+
+function centerActive() {
+  const ph = PHASES[currentPhaseIdx];
+  fitBox(getNodesBoundingBox(getPhaseNodeIds(ph)), 0.5, 1.15);
+}
+
+function fitAll() {
+  fitBox(getFullSceneBox(), 0.35, 1.15);
+}
+
+function resetZoom() {
+  const ph = PHASES[currentPhaseIdx];
+  const box = getNodesBoundingBox(getPhaseNodeIds(ph));
+  const av = getAvailableRect();
+  cam.scale = 1.0;
+  cam.x = av.left + (av.w - box.w) / 2 - box.x;
+  cam.y = av.top + (av.h - box.h) / 2 - box.y;
+  applyCam();
+}
+
+function togglePlay() {
+  if (playTimer) {
+    stopPlay();
+  } else {
+    document.getElementById("playBtn").textContent = "⏸ Pause";
+    playTimer = setInterval(() => {
+      const next = currentPhaseIdx >= 6 ? 0 : currentPhaseIdx + 1;
+      setPhase(next);
+    }, 3200);
+  }
+}
+
+viewModeBtn.onclick = () => setViewMode(viewMode === "arch" ? "die" : "arch");
+document.getElementById("prevBtn").onclick = () => { stopPlay(); setPhase(currentPhaseIdx - 1); };
+document.getElementById("nextBtn").onclick = () => { stopPlay(); setPhase(currentPhaseIdx + 1); };
+document.getElementById("playBtn").onclick = togglePlay;
+document.getElementById("centerActiveBtn").onclick = centerActive;
+document.getElementById("fitAllBtn").onclick = fitAll;
+document.getElementById("zoomInBtn").onclick = () => zoomAtCenter(1.18);
+document.getElementById("zoomOutBtn").onclick = () => zoomAtCenter(1 / 1.18);
+document.getElementById("zoomResetBtn").onclick = resetZoom;
+document.getElementById("focusCompBtn").onclick = () => {
+  if (selectedCompId) panToNode(selectedCompId);
+};
+
+panelToggleBtn.onclick = () => setPanelOpen(sidePanel.classList.contains("collapsed"));
+document.getElementById("closePanelBtn").onclick = () => setPanelOpen(false);
+panelReopenBtn.onclick = () => setPanelOpen(true);
+
+const kbdHelp = document.getElementById("kbdHelp");
+const helpBtn = document.getElementById("helpBtn");
+function setHelpOpen(open) {
+  kbdHelp.classList.toggle("open", open);
+  helpBtn.classList.toggle("toggled", open);
+}
+helpBtn.onclick = () => setHelpOpen(!kbdHelp.classList.contains("open"));
+document.getElementById("closeHelpBtn").onclick = () => setHelpOpen(false);
+
+document.getElementById("ghostRange").addEventListener("input", (e) => {
+  setGhostOpacity(parseInt(e.target.value, 10));
+});
+
+document.querySelectorAll("button").forEach(b => {
+  b.addEventListener("click", () => b.blur());
+});
+
+document.getElementById("exportBtn").onclick = () => {
+  const clone = svgEl.cloneNode(true);
+  const box = getFullSceneBox();
+  clone.setAttribute("viewBox", `0 0 ${box.w} ${box.h}`);
+  clone.removeAttribute("width");
+  clone.removeAttribute("height");
+  const vp = clone.querySelector("#viewport");
+  if (vp) vp.removeAttribute("transform");
+  const dead = clone.querySelector(viewMode === "die" ? "#archLayer" : "#dieLayer");
+  if (dead) dead.remove();
+  const shown = clone.querySelector(viewMode === "die" ? "#dieLayer" : "#archLayer");
+  if (shown) shown.removeAttribute("style");
+  const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
+  const op = (ghostOpacity / 100).toFixed(2);
+  const eop = ((ghostOpacity / 100) * 0.55).toFixed(2);
+  style.textContent = `
+    text { font-family: sans-serif; }
+    .comp.inactive { opacity: ${op}; }
+    .edge.inactive, .edge-label.inactive { opacity: ${eop}; }
+    .edge { fill: none; stroke-width: 2.4; }
+    .edge-label { paint-order: stroke; stroke: #faf5ec; stroke-width: 5px; }
+  `;
+  clone.insertBefore(style, clone.firstChild);
+  const blob = new Blob([new XMLSerializer().serializeToString(clone)], { type: "image/svg+xml" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `s22_sm8450_${viewMode}_${PHASES[currentPhaseIdx].id}.svg`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const inInput = document.activeElement && document.activeElement.tagName === "INPUT";
+  const k = e.key.toLowerCase();
+
+  if (e.key === "ArrowRight" && !inInput) { e.preventDefault(); stopPlay(); setPhase(currentPhaseIdx + 1); }
+  else if (e.key === "ArrowLeft" && !inInput) { e.preventDefault(); stopPlay(); setPhase(currentPhaseIdx - 1); }
+  else if (e.key === " ") { e.preventDefault(); togglePlay(); }
+  else if (e.key === "=" || e.key === "+") zoomAtCenter(1.15);
+  else if (e.key === "-" || e.key === "_") zoomAtCenter(1 / 1.15);
+  else if (k === "c") centerActive();
+  else if (k === "f") fitAll();
+  else if (k === "r") resetZoom();
+  else if (e.key === "[" || e.key === "{") setGhostOpacity(ghostOpacity - 5);
+  else if (e.key === "]" || e.key === "}") setGhostOpacity(ghostOpacity + 5);
+  else if (k === "o") setGhostOpacity(ghostOpacity > 0 ? 0 : lastNonZeroOpacity);
+  else if (k === "d") setPanelOpen(sidePanel.classList.contains("collapsed"));
+  else if (k === "v") setViewMode(viewMode === "arch" ? "die" : "arch");
+  else if (e.key === "?") setHelpOpen(!kbdHelp.classList.contains("open"));
+  else if (e.key === "Escape") setHelpOpen(false);
+  else if (/^[0-6]$/.test(e.key)) { stopPlay(); setPhase(parseInt(e.key, 10)); }
+  else if (k === "a") { stopPlay(); setPhase(7); }
+  else if (k === "b") { stopPlay(); setPhase(8); }
+});
+
+const params = new URLSearchParams(location.search);
+const hashId = (location.hash || "").replace("#", "");
+const initIdx = Math.max(0, PHASES.findIndex(p => p.id === hashId));
+updateGhostStyle();
+if (params.get("view") === "die" || params.has("die")) {
+  currentPhaseIdx = initIdx;
+  setViewMode("die");
+} else {
+  setPhase(initIdx, true);
+}
+</script>
+</body>
+</html>
